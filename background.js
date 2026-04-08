@@ -383,6 +383,169 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     });
     return true;
   }
+
+  if (msg.type === "IMPORT_FILE") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      const { fileName, content, settings } = msg;
+      const filePath = `${settings.savePath.replace(/\/$/, "")}/${fileName}`;
+
+      saveToGitHub({
+        token,
+        owner: settings.owner,
+        repo: settings.repo,
+        branch: settings.branch,
+        path: filePath,
+        content,
+        message: `excalihub: import ${fileName}`,
+      })
+        .then((result) =>
+          sendResponse({
+            ok: true,
+            url: result.content.html_url,
+            path: filePath,
+          }),
+        )
+        .catch((err) => sendResponse({ error: err.message }));
+    });
+    return true;
+  }
+
+  if (msg.type === "GET_FILE_HISTORY") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      chrome.storage.sync.get(["owner", "repo", "branch"]).then((settings) => {
+        const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/commits?path=${msg.path}&sha=${settings.branch || "main"}&per_page=20`;
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        };
+
+        fetch(url, { headers })
+          .then((resp) => resp.json())
+          .then((commits) => {
+            if (!Array.isArray(commits)) {
+              throw new Error("Failed to fetch history");
+            }
+
+            const history = commits.map((commit) => ({
+              sha: commit.sha,
+              date: new Date(commit.commit.author.date).toLocaleString(),
+              message: commit.commit.message,
+            }));
+
+            sendResponse({ ok: true, commits: history });
+          })
+          .catch((err) => sendResponse({ error: err.message }));
+      });
+    });
+    return true;
+  }
+
+  if (msg.type === "LOAD_FILE_AT_COMMIT") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      chrome.storage.sync.get(["owner", "repo"]).then((settings) => {
+        const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${msg.path}?ref=${msg.sha}`;
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        };
+
+        fetch(url, { headers })
+          .then((resp) => resp.json())
+          .then((data) => {
+            const content = decodeURIComponent(
+              escape(atob(data.content.replace(/\n/g, ""))),
+            );
+            const scene = JSON.parse(content);
+            sendResponse({ ok: true, scene });
+          })
+          .catch((err) => sendResponse({ error: err.message }));
+      });
+    });
+    return true;
+  }
+
+  if (msg.type === "GET_STATISTICS") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      chrome.storage.sync
+        .get(["owner", "repo", "branch", "savePath"])
+        .then((settings) => {
+          const savePath = settings.savePath || "drawings/";
+          const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${savePath}?ref=${settings.branch || "main"}`;
+          const headers = {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/vnd.github+json",
+          };
+
+          fetch(url, { headers })
+            .then((resp) => {
+              if (!resp.ok) throw new Error("Failed to fetch repository data");
+              return resp.json();
+            })
+            .then((files) => {
+              if (!Array.isArray(files)) {
+                throw new Error("Invalid repository data");
+              }
+
+              const excalidrawFiles = files.filter(
+                (f) => f.type === "file" && f.name.endsWith(".excalidraw"),
+              );
+
+              const totalFiles = excalidrawFiles.length;
+              const totalSize = excalidrawFiles.reduce(
+                (sum, f) => sum + (f.size || 0),
+                0,
+              );
+              const averageSize = totalFiles > 0 ? totalSize / totalFiles : 0;
+
+              // Get last modified file
+              let lastSaved = "Never";
+              if (totalFiles > 0) {
+                const sorted = [...excalidrawFiles].sort((a, b) =>
+                  b.name.localeCompare(a.name),
+                );
+                const latest = sorted[0];
+                // Try to extract date from filename
+                const dateMatch = latest.name.match(/(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                  lastSaved = new Date(dateMatch[1]).toLocaleDateString();
+                }
+              }
+
+              sendResponse({
+                ok: true,
+                stats: {
+                  totalFiles,
+                  totalSize,
+                  averageSize,
+                  lastSaved,
+                },
+              });
+            })
+            .catch((err) => sendResponse({ error: err.message }));
+        });
+    });
+    return true;
+  }
 });
 
 // ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
@@ -452,3 +615,137 @@ chrome.commands.onCommand.addListener(async (command) => {
     }
   }
 });
+
+// ─── Auto-Save ───────────────────────────────────────────────────────────────
+
+let autoSaveTimer = null;
+
+async function setupAutoSave() {
+  // Clear existing timer
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+
+  const settings = await chrome.storage.sync.get([
+    "autoSaveEnabled",
+    "autoSaveInterval",
+    "owner",
+    "repo",
+    "branch",
+    "savePath",
+  ]);
+
+  if (!settings.autoSaveEnabled || !settings.owner || !settings.repo) {
+    return;
+  }
+
+  const intervalMs = (settings.autoSaveInterval || 5) * 60 * 1000; // Convert minutes to ms
+
+  autoSaveTimer = setInterval(async () => {
+    try {
+      // Get token
+      const { token } = await chrome.storage.local.get("token");
+      if (!token) return;
+
+      // Find all Excalidraw tabs
+      const tabs = await chrome.tabs.query({ url: "https://excalidraw.com/*" });
+
+      for (const tab of tabs) {
+        try {
+          // Get scene data
+          const sceneResult = await chrome.tabs.sendMessage(tab.id, {
+            type: "GET_SCENE",
+          });
+          if (sceneResult?.error || !sceneResult?.scene) continue;
+
+          // Generate auto-save filename with timestamp
+          const title = sceneResult.title || "untitled";
+          const timestamp = new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")
+            .slice(0, 19);
+          const fileName = `${title}_${timestamp}.excalidraw`;
+          const filePath = `_autosave/${fileName}`;
+
+          // Save to GitHub
+          const jsonStr = JSON.stringify(sceneResult.scene, null, 2);
+          const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+
+          await saveToGitHub({
+            token,
+            owner: settings.owner,
+            repo: settings.repo,
+            branch: settings.branch || "main",
+            path: filePath,
+            content: b64,
+            message: `excalihub: auto-save ${title}`,
+          });
+
+          // Clean old backups if enabled
+          if (settings.autoSaveCleanOld) {
+            await cleanOldAutoSaves(settings, token, title);
+          }
+        } catch (err) {
+          console.error("Auto-save failed for tab:", tab.id, err);
+        }
+      }
+    } catch (err) {
+      console.error("Auto-save error:", err);
+    }
+  }, intervalMs);
+}
+
+// Clean old auto-saves for a specific drawing
+async function cleanOldAutoSaves(settings, token, title, keepCount = 10) {
+  try {
+    const listUrl = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/_autosave?ref=${settings.branch || "main"}`;
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+    };
+
+    const resp = await fetch(listUrl, { headers });
+    if (!resp.ok) return;
+
+    const files = await resp.json();
+    const matchingFiles = files
+      .filter(
+        (f) => f.name.startsWith(title + "_") && f.name.endsWith(".excalidraw"),
+      )
+      .sort((a, b) => b.name.localeCompare(a.name)); // Newest first
+
+    // Delete oldest files if more than keepCount
+    if (matchingFiles.length > keepCount) {
+      const toDelete = matchingFiles.slice(keepCount);
+      for (const file of toDelete) {
+        try {
+          await deleteFileFromGitHub({
+            token,
+            owner: settings.owner,
+            repo: settings.repo,
+            branch: settings.branch || "main",
+            path: file.path,
+            sha: file.sha,
+          });
+        } catch (err) {
+          console.error("Failed to delete old auto-save:", file.path, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed to clean old auto-saves:", err);
+  }
+}
+
+// Handle UPDATE_AUTOSAVE message
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "UPDATE_AUTOSAVE") {
+    setupAutoSave();
+    sendResponse({ ok: true });
+    return true;
+  }
+});
+
+// Setup auto-save on service worker startup
+setupAutoSave();

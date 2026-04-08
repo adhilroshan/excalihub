@@ -80,12 +80,26 @@ function injectSidebar() {
       <div class="sidebar-section">
         <div class="section-header">
           <span>Saved Files</span>
-          <button class="refresh-btn" id="excalihub-refresh" title="Refresh file list">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M1.5 7a5.5 5.5 0 019.8-3.2M12.5 7a5.5 5.5 0 01-9.8 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-              <path d="M11.5 1v3h-3M2.5 13v-3h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+          <div style="display: flex; gap: 6px;">
+            <button class="new-drawing-btn" id="excalihub-new-drawing" title="Create new drawing">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M2 1.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/>
+                <path d="M8 1.5v4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M5.5 8h3M7 6.5v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button class="import-btn" id="excalihub-import" title="Import .excalidraw file from disk">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1v8M3 6l4 4 4-4M2 10v2a1 1 0 001 1h8a1 1 0 001-1v-2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button class="refresh-btn" id="excalihub-refresh" title="Refresh file list">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M1.5 7a5.5 5.5 0 019.8-3.2M12.5 7a5.5 5.5 0 01-9.8 3.2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                <path d="M11.5 1v3h-3M2.5 13v-3h3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- Search and Sort Controls -->
@@ -161,6 +175,38 @@ function injectSidebar() {
             ">
               ↑
             </button>
+            <button id="excalihub-batch-select" title="Select all files" style="
+              background: #0d0f11;
+              border: 1px solid #252b33;
+              color: #6b7685;
+              border-radius: 6px;
+              padding: 6px 10px;
+              cursor: pointer;
+              font-size: 11px;
+              transition: color 0.15s, border-color 0.15s;
+              font-family: 'DM Sans', sans-serif;
+            ">
+              ☐
+            </button>
+          </div>
+          <div id="excalihub-batch-actions" style="display: none; margin-top: 8px; padding: 8px; background: #0d0f11; border: 1px solid #252b33; border-radius: 6px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+              <span style="font-size: 11px; color: #6b7685;"><span id="batch-selected-count">0</span> files selected</span>
+              <button id="excalihub-batch-delete" style="
+                background: #331414;
+                border: 1px solid #5c1c1c;
+                color: #f76f6f;
+                border-radius: 5px;
+                padding: 5px 10px;
+                cursor: pointer;
+                font-size: 11px;
+                font-weight: 500;
+                font-family: 'DM Sans', sans-serif;
+                transition: opacity 0.15s;
+              ">
+                Delete Selected
+              </button>
+            </div>
           </div>
         </div>
 
@@ -263,6 +309,24 @@ function injectSidebar() {
       margin-bottom: 8px;
     }
 
+    .new-drawing-btn {
+      background: #161a1f;
+      border: 1px solid #252b33;
+      color: #e8edf2;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+
+    .new-drawing-btn:hover {
+      background: #252b33;
+      color: #4f8ef7;
+      border-color: #4f8ef7;
+    }
+
     .refresh-btn {
       background: none;
       border: none;
@@ -281,6 +345,22 @@ function injectSidebar() {
 
     .refresh-btn.spinning svg {
       animation: spin 0.7s linear infinite;
+    }
+
+    .import-btn {
+      background: none;
+      border: none;
+      color: #6b7685;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s, transform 0.2s;
+    }
+
+    .import-btn:hover {
+      color: #3dd68c;
     }
 
     @keyframes spin {
@@ -381,6 +461,11 @@ function injectSidebar() {
       background: #252b33;
     }
 
+    .file-item .file-action-btn.preview:hover {
+      color: #4f8ef7;
+      background: #1e3259;
+    }
+
     .file-item .file-action-btn.delete:hover {
       color: #f76f6f;
       background: #331414;
@@ -408,6 +493,297 @@ function injectSidebar() {
       max-width: 320px;
       width: 90%;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Preview modal */
+    .preview-dialog {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000000;
+    }
+
+    .preview-dialog .preview-box {
+      background: #161a1f;
+      border: 1px solid #252b33;
+      border-radius: 12px;
+      padding: 0;
+      max-width: 480px;
+      width: 90%;
+      max-height: 80vh;
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .preview-dialog .preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid #252b33;
+    }
+
+    .preview-dialog .preview-title {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      margin-right: 12px;
+    }
+
+    .preview-dialog .preview-close {
+      background: none;
+      border: none;
+      color: #6b7685;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .preview-dialog .preview-close:hover {
+      color: #e8edf2;
+      background: #252b33;
+    }
+
+    .preview-dialog .preview-content {
+      padding: 18px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .preview-dialog .preview-info {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .preview-dialog .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #252b33;
+    }
+
+    .preview-dialog .info-row:last-child {
+      border-bottom: none;
+    }
+
+    .preview-dialog .info-label {
+      font-size: 11px;
+      color: #6b7685;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 500;
+    }
+
+    .preview-dialog .info-value {
+      font-size: 12px;
+      color: #e8edf2;
+      font-family: 'DM Mono', monospace;
+      max-width: 240px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .preview-dialog .preview-actions {
+      display: flex;
+      gap: 8px;
+      padding: 14px 18px;
+      border-top: 1px solid #252b33;
+    }
+
+    .preview-dialog .preview-btn {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: opacity 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .preview-dialog .preview-btn.primary {
+      background: #4f8ef7;
+      color: #fff;
+    }
+
+    .preview-dialog .preview-btn.secondary {
+      background: #0d0f11;
+      color: #e8edf2;
+      border: 1px solid #252b33;
+    }
+
+    .preview-dialog .preview-btn.secondary:hover {
+      border-color: #4f8ef7;
+      color: #4f8ef7;
+    }
+
+    /* Version history modal */
+    .version-history-dialog {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000001;
+    }
+
+    .version-history-dialog .version-box {
+      background: #161a1f;
+      border: 1px solid #252b33;
+      border-radius: 12px;
+      padding: 0;
+      max-width: 520px;
+      width: 90%;
+      max-height: 85vh;
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .version-history-dialog .version-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 18px;
+      border-bottom: 1px solid #252b33;
+    }
+
+    .version-history-dialog .version-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .version-history-dialog .version-close {
+      background: none;
+      border: none;
+      color: #6b7685;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .version-history-dialog .version-close:hover {
+      color: #e8edf2;
+      background: #252b33;
+    }
+
+    .version-history-dialog .version-content {
+      padding: 18px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .version-history-dialog .version-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .version-history-dialog .version-item {
+      display: flex;
+      gap: 12px;
+      padding: 10px;
+      background: #0d0f11;
+      border: 1px solid #252b33;
+      border-radius: 8px;
+      transition: border-color 0.15s;
+    }
+
+    .version-history-dialog .version-item:hover {
+      border-color: #4f8ef7;
+    }
+
+    .version-history-dialog .version-item.current {
+      border-color: #3dd68c;
+      background: #0f3326;
+    }
+
+    .version-history-dialog .version-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #4f8ef7;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+
+    .version-history-dialog .version-item.current .version-dot {
+      background: #3dd68c;
+    }
+
+    .version-history-dialog .version-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .version-history-dialog .version-date {
+      font-size: 12px;
+      font-weight: 500;
+      color: #e8edf2;
+      margin-bottom: 4px;
+    }
+
+    .version-history-dialog .version-message {
+      font-size: 11px;
+      color: #6b7685;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .version-history-dialog .version-actions {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+    }
+
+    .version-history-dialog .version-restore-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid #252b33;
+      background: transparent;
+      color: #6b7685;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .version-history-dialog .version-restore-btn:hover {
+      color: #4f8ef7;
+      border-color: #4f8ef7;
     }
 
     .confirmation-dialog .dialog-title {
@@ -568,6 +944,8 @@ function injectSidebar() {
   let currentFiles = [];
   let currentSortBy = "name";
   let currentSortOrder = "asc"; // 'asc' or 'desc'
+  let batchMode = false;
+  let selectedFiles = new Map();
 
   // Close sidebar
   closeBtn.addEventListener("click", () => {
@@ -695,7 +1073,14 @@ function injectSidebar() {
       item.className = "file-item";
       item.dataset.path = file.path;
       item.dataset.sha = file.sha;
+
+      // Add checkbox if in batch mode
+      const checkboxHtml = batchMode
+        ? `<input type="checkbox" class="file-checkbox" data-path="${file.path}" data-sha="${file.sha}" ${selectedFiles.has(file.path) ? "checked" : ""} style="margin-right: 6px; cursor: pointer; accent-color: #4f8ef7;" />`
+        : "";
+
       item.innerHTML = `
+        ${checkboxHtml}
         <div class="file-icon">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M2 1.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/>
@@ -707,6 +1092,12 @@ function injectSidebar() {
           <div class="file-meta">${formatSize(file.size)}</div>
         </div>
         <div class="file-actions">
+          <button class="file-action-btn preview" title="Preview file" data-path="${file.path}">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path d="M1 7s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z" stroke="currentColor" stroke-width="1.2"/>
+              <circle cx="7" cy="7" r="1.5" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+          </button>
           <button class="file-action-btn delete" title="Delete file" data-path="${file.path}" data-sha="${file.sha}">
             <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
               <path d="M3 4h8M5 4V3a1 1 0 011-1h2a1 1 0 011 1v1M10 4v7a1 1 0 01-1 1H5a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -732,6 +1123,38 @@ function injectSidebar() {
         confirmDeleteFile(path, sha);
       });
     });
+
+    // Add preview button listeners
+    document.querySelectorAll(".file-action-btn.preview").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const path = btn.dataset.path;
+        const file = currentFiles.find((f) => f.path === path);
+        if (file) showFilePreview(file);
+      });
+    });
+
+    // Add checkbox listeners for batch selection
+    if (batchMode) {
+      document.querySelectorAll(".file-checkbox").forEach((checkbox) => {
+        checkbox.addEventListener("change", (e) => {
+          e.stopPropagation();
+          const path = checkbox.dataset.path;
+          const sha = checkbox.dataset.sha;
+
+          if (checkbox.checked) {
+            selectedFiles.set(path, { path, sha });
+          } else {
+            selectedFiles.delete(path);
+          }
+
+          // Update batch actions bar
+          batchSelectedCount.textContent = selectedFiles.size;
+          batchActionsBar.style.display =
+            selectedFiles.size > 0 ? "block" : "none";
+        });
+      });
+    }
   }
 
   // Load file list from GitHub
@@ -813,6 +1236,119 @@ function injectSidebar() {
   // Refresh button
   refreshBtn.addEventListener("click", loadFileList);
 
+  // Import button
+  const importBtn = document.getElementById("excalihub-import");
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  fileInput.accept = ".excalidraw,.json";
+  fileInput.style.display = "none";
+  document.body.appendChild(fileInput);
+
+  importBtn.addEventListener("click", () => {
+    fileInput.click();
+  });
+
+  // New Drawing button
+  const newDrawingBtn = document.getElementById("excalihub-new-drawing");
+  newDrawingBtn.addEventListener("click", () => {
+    showConfirmation(
+      "Create New Drawing",
+      "This will clear the current canvas. Make sure to save your work first!",
+      () => {
+        // Clear Excalidraw canvas
+        localStorage.setItem("excalidraw", JSON.stringify([]));
+        localStorage.setItem("excalidraw-state", JSON.stringify({}));
+        localStorage.removeItem("excalidraw-files");
+
+        showToast("✓ New drawing created", "success");
+
+        // Reload the page to apply changes
+        setTimeout(() => window.location.reload(), 300);
+      },
+      "Create New",
+      "primary",
+    );
+  });
+
+  fileInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validate file
+    if (!file.name.endsWith(".excalidraw") && !file.name.endsWith(".json")) {
+      showToast("Please select a valid .excalidraw file", "error");
+      return;
+    }
+
+    try {
+      const content = await file.text();
+      const sceneData = JSON.parse(content);
+
+      // Validate it's a proper Excalidraw file
+      if (!sceneData.type || sceneData.type !== "excalidraw") {
+        throw new Error("Invalid Excalidraw file format");
+      }
+
+      // Show confirmation dialog
+      showConfirmation(
+        "Import File",
+        `Import <strong>${file.name}</strong> to GitHub?`,
+        async () => {
+          try {
+            // Upload to GitHub
+            const jsonStr = JSON.stringify(sceneData, null, 2);
+            const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+
+            const settings = await chrome.storage.sync.get([
+              "owner",
+              "repo",
+              "branch",
+              "savePath",
+            ]);
+
+            if (!settings.owner || !settings.repo) {
+              throw new Error("Please configure your repository first.");
+            }
+
+            const { token } = await chrome.storage.local.get("token");
+            if (!token) {
+              throw new Error("Please connect your GitHub account.");
+            }
+
+            const response = await chrome.runtime.sendMessage({
+              type: "IMPORT_FILE",
+              fileName: file.name,
+              content: b64,
+              settings: {
+                owner: settings.owner,
+                repo: settings.repo,
+                branch: settings.branch || "main",
+                savePath: settings.savePath || "drawings/",
+              },
+            });
+
+            if (response?.error) {
+              throw new Error(response.error);
+            }
+
+            showToast(`✓ Imported ${file.name} to GitHub`, "success");
+            // Reload file list
+            loadFileList();
+          } catch (err) {
+            showToast(err.message, "error");
+          }
+        },
+        "Import",
+        "primary",
+      );
+    } catch (err) {
+      showToast(`Invalid file: ${err.message}`, "error");
+    }
+
+    // Reset file input
+    fileInput.value = "";
+  });
+
   // Search input
   searchInput.addEventListener("input", () => {
     renderFiles();
@@ -838,6 +1374,83 @@ function injectSidebar() {
     sortOrderBtn.textContent = currentSortOrder === "asc" ? "↑" : "↓";
     await saveSortSettings();
     renderFiles();
+  });
+
+  // Batch select all button
+  const batchSelectBtn = document.getElementById("excalihub-batch-select");
+  const batchActionsBar = document.getElementById("excalihub-batch-actions");
+  const batchSelectedCount = document.getElementById("batch-selected-count");
+  const batchDeleteBtn = document.getElementById("excalihub-batch-delete");
+
+  batchSelectBtn.addEventListener("click", () => {
+    batchMode = !batchMode;
+    batchSelectBtn.textContent = batchMode ? "☑" : "☐";
+    batchSelectBtn.style.borderColor = batchMode ? "#4f8ef7" : "#252b33";
+    batchSelectBtn.style.color = batchMode ? "#4f8ef7" : "#6b7685";
+
+    if (batchMode) {
+      // Show checkboxes
+      renderFiles();
+    } else {
+      // Clear selection and hide batch actions
+      selectedFiles.clear();
+      batchActionsBar.style.display = "none";
+      renderFiles();
+    }
+  });
+
+  // Batch delete button
+  batchDeleteBtn.addEventListener("click", () => {
+    if (selectedFiles.size === 0) return;
+
+    showConfirmation(
+      "Delete Selected Files",
+      `Are you sure you want to delete <strong>${selectedFiles.size} files</strong>? This action cannot be undone.`,
+      async () => {
+        batchDeleteBtn.disabled = true;
+        batchDeleteBtn.textContent = "Deleting...";
+
+        let successCount = 0;
+        let errorCount = 0;
+
+        for (const { path, sha } of selectedFiles.values()) {
+          try {
+            const response = await chrome.runtime.sendMessage({
+              type: "DELETE_FILE",
+              path,
+              sha,
+            });
+
+            if (response?.error) {
+              errorCount++;
+              console.error("Failed to delete:", path, response.error);
+            } else {
+              successCount++;
+            }
+          } catch (err) {
+            errorCount++;
+            console.error("Failed to delete:", path, err);
+          }
+        }
+
+        selectedFiles.clear();
+        batchActionsBar.style.display = "none";
+        batchDeleteBtn.disabled = false;
+        batchDeleteBtn.textContent = "Delete Selected";
+
+        if (successCount > 0) {
+          showToast(`✓ Deleted ${successCount} files`, "success");
+        }
+        if (errorCount > 0) {
+          showToast(`Failed to delete ${errorCount} files`, "error");
+        }
+
+        // Reload file list
+        loadFileList();
+      },
+      "Delete All",
+      "danger",
+    );
   });
 
   // Show confirmation dialog
@@ -905,6 +1518,236 @@ function injectSidebar() {
       "Delete",
       "danger",
     );
+  }
+
+  // Show file preview modal
+  function showFilePreview(file) {
+    const overlay = document.createElement("div");
+    overlay.className = "preview-dialog";
+    overlay.innerHTML = `
+      <div class="preview-box">
+        <div class="preview-header">
+          <div class="preview-title">${file.name}</div>
+          <button class="preview-close" title="Close preview">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="preview-content">
+          <div class="preview-info">
+            <div class="info-row">
+              <span class="info-label">File Name</span>
+              <span class="info-value" title="${file.name}">${file.name}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">File Size</span>
+              <span class="info-value">${formatSize(file.size)}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Path</span>
+              <span class="info-value" title="${file.path}">${file.path}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Type</span>
+              <span class="info-value">Excalidraw Drawing</span>
+            </div>
+          </div>
+        </div>
+        <div class="preview-actions">
+          <button class="preview-btn secondary" id="preview-open-github">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M6 1v4H2v8h10V5H8V1H6z" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            View on GitHub
+          </button>
+          <button class="preview-btn secondary" id="preview-version-history">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M7 1v6l3 2" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              <circle cx="7" cy="7" r="6" stroke="currentColor" stroke-width="1.2"/>
+            </svg>
+            History
+          </button>
+          <button class="preview-btn primary" id="preview-load-file">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 7h10M8 3l4 4-4 4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            Load Drawing
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Event listeners
+    overlay
+      .querySelector(".preview-close")
+      .addEventListener("click", () => overlay.remove());
+
+    document
+      .getElementById("preview-open-github")
+      .addEventListener("click", () => {
+        window.open(file.url, "_blank");
+        overlay.remove();
+      });
+
+    document
+      .getElementById("preview-load-file")
+      .addEventListener("click", async () => {
+        overlay.remove();
+        const fileItem = document.querySelector(
+          `.file-item[data-path="${file.path}"]`,
+        );
+        if (fileItem) {
+          await loadFile(file.path, fileItem);
+        }
+      });
+
+    document
+      .getElementById("preview-version-history")
+      .addEventListener("click", async () => {
+        overlay.remove();
+        await showVersionHistory(file);
+      });
+
+    // Close on overlay click
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    // Close on Escape key
+    const escHandler = (e) => {
+      if (e.key === "Escape") {
+        overlay.remove();
+        document.removeEventListener("keydown", escHandler);
+      }
+    };
+    document.addEventListener("keydown", escHandler);
+  }
+
+  // Show version history modal
+  async function showVersionHistory(file) {
+    const overlay = document.createElement("div");
+    overlay.className = "version-history-dialog";
+    overlay.innerHTML = `
+      <div class="version-box">
+        <div class="version-header">
+          <div class="version-title">Version History</div>
+          <button class="version-close" title="Close">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div class="version-content">
+          <div class="version-timeline">
+            <div style="text-align: center; color: #6b7685; font-size: 12px; padding: 20px;">
+              Loading history...
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    // Event listeners
+    overlay
+      .querySelector(".version-close")
+      .addEventListener("click", () => overlay.remove());
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+
+    // Fetch commit history from GitHub
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: "GET_FILE_HISTORY",
+        path: file.path,
+      });
+
+      if (response?.error) {
+        throw new Error(response.error);
+      }
+
+      const timeline = overlay.querySelector(".version-timeline");
+      timeline.innerHTML = "";
+
+      if (!response.commits || response.commits.length === 0) {
+        timeline.innerHTML =
+          '<div style="text-align: center; color: #6b7685; font-size: 12px; padding: 20px;">No history found</div>';
+        return;
+      }
+
+      response.commits.forEach((commit, index) => {
+        const item = document.createElement("div");
+        item.className = `version-item${index === 0 ? " current" : ""}`;
+        item.innerHTML = `
+          <div class="version-dot"></div>
+          <div class="version-info">
+            <div class="version-date">${commit.date}</div>
+            <div class="version-message">${commit.message}</div>
+          </div>
+          ${
+            index > 0
+              ? `
+            <div class="version-actions">
+              <button class="version-restore-btn" data-sha="${commit.sha}">Restore</button>
+            </div>
+          `
+              : '<div style="font-size: 10px; color: #3dd68c; font-weight: 500;">Current</div>'
+          }
+        `;
+        timeline.appendChild(item);
+      });
+
+      // Add restore button handlers
+      timeline.querySelectorAll(".version-restore-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const sha = btn.dataset.sha;
+          try {
+            // Load the file content from that commit
+            const loadResponse = await chrome.runtime.sendMessage({
+              type: "LOAD_FILE_AT_COMMIT",
+              path: file.path,
+              sha,
+            });
+
+            if (loadResponse?.error) {
+              throw new Error(loadResponse.error);
+            }
+
+            overlay.remove();
+            showToast("Version restored! Refreshing...", "success");
+
+            // Import the scene
+            const scene = loadResponse.scene;
+            localStorage.setItem(
+              "excalidraw",
+              JSON.stringify(scene.elements || []),
+            );
+            localStorage.setItem(
+              "excalidraw-state",
+              JSON.stringify(scene.appState || {}),
+            );
+            if (scene.files) {
+              localStorage.setItem(
+                "excalidraw-files",
+                JSON.stringify(scene.files),
+              );
+            }
+
+            setTimeout(() => window.location.reload(), 500);
+          } catch (err) {
+            showToast(err.message, "error");
+          }
+        });
+      });
+    } catch (err) {
+      const timeline = overlay.querySelector(".version-timeline");
+      timeline.innerHTML = `<div style="text-align: center; color: #f76f6f; font-size: 12px; padding: 20px;">Failed to load history: ${err.message}</div>`;
+    }
   }
 
   // Auto-load file list when sidebar is injected
