@@ -35,7 +35,7 @@ async function loadAuth() {
   if (authenticated && user) {
     document.getElementById("opt-avatar").src = user.avatar_url;
     document.getElementById("opt-login").textContent = `@${user.login}`;
-    authedView.style.display = "flex";
+    authedView.style.display = "block";
     unauthedView.style.display = "none";
   } else {
     authedView.style.display = "none";

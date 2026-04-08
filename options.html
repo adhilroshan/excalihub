@@ -2,9 +2,10 @@
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>ExcaliHub — Settings</title>
         <style>
-            @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap");
+            @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
             *,
             *::before,
             *::after {
@@ -14,389 +15,886 @@
             }
 
             :root {
-                --bg: #0d0f11;
-                --surface: #161a1f;
+                --bg-primary: #0d0f11;
+                --bg-secondary: #161a1f;
+                --bg-tertiary: #1c2128;
                 --border: #252b33;
-                --text: #e8edf2;
-                --muted: #6b7685;
+                --border-light: #30363d;
+                --text-primary: #e8edf2;
+                --text-secondary: #8b949e;
+                --text-muted: #6b7685;
                 --accent: #4f8ef7;
+                --accent-hover: #3a7de6;
+                --accent-dim: rgba(79, 142, 247, 0.1);
                 --success: #3dd68c;
+                --success-dim: rgba(61, 214, 140, 0.1);
                 --error: #f76f6f;
+                --error-dim: rgba(247, 111, 111, 0.1);
+                --warning: #f5a623;
+                --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+                --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+                --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+                --radius-sm: 8px;
+                --radius-md: 10px;
+                --radius-lg: 12px;
             }
 
             body.theme-light {
-                --bg: #ffffff;
-                --surface: #f5f7fa;
-                --border: #d1d5db;
-                --text: #1f2937;
-                --muted: #6b7280;
+                --bg-primary: #ffffff;
+                --bg-secondary: #f8f9fa;
+                --bg-tertiary: #f1f3f5;
+                --border: #e1e4e8;
+                --border-light: #d0d7de;
+                --text-primary: #1f2937;
+                --text-secondary: #6b7280;
+                --text-muted: #9ca3af;
                 --accent: #4f8ef7;
+                --accent-hover: #3a7de6;
+                --accent-dim: rgba(79, 142, 247, 0.08);
                 --success: #10b981;
+                --success-dim: rgba(16, 185, 129, 0.08);
                 --error: #ef4444;
+                --error-dim: rgba(239, 68, 68, 0.08);
+                --warning: #f59e0b;
+                --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+                --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+                --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
             }
 
             body {
-                background: var(--bg);
-                color: var(--text);
-                font-family: "DM Sans", sans-serif;
+                background: var(--bg-primary);
+                color: var(--text-primary);
+                font-family:
+                    "Inter",
+                    -apple-system,
+                    BlinkMacSystemFont,
+                    "Segoe UI",
+                    sans-serif;
                 font-size: 14px;
+                line-height: 1.6;
                 min-height: 100vh;
-                display: flex;
-                justify-content: center;
-                padding: 48px 16px;
             }
 
-            .page {
-                width: 100%;
-                max-width: 480px;
+            /* Header */
+            .header {
+                background: var(--bg-secondary);
+                border-bottom: 1px solid var(--border);
+                padding: 20px 0;
+                position: sticky;
+                top: 0;
+                z-index: 100;
+            }
+
+            .header-content {
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 0 24px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
             }
 
             .logo {
                 display: flex;
                 align-items: center;
-                gap: 10px;
-                font-size: 18px;
-                font-weight: 600;
-                margin-bottom: 32px;
-            }
-            .logo svg {
-                opacity: 0.9;
+                gap: 12px;
             }
 
-            h2 {
+            .logo-icon {
+                width: 36px;
+                height: 36px;
+                background: var(--accent-dim);
+                border-radius: var(--radius-sm);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .logo h1 {
+                font-size: 20px;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+            }
+
+            .logo-badge {
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--accent);
+                background: var(--accent-dim);
+                padding: 3px 8px;
+                border-radius: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+
+            .header-actions {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+            }
+
+            .theme-toggle {
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border);
+                color: var(--text-secondary);
+                cursor: pointer;
+                padding: 8px;
+                border-radius: var(--radius-sm);
+                display: flex;
+                align-items: center;
+                transition: all 0.2s;
+            }
+
+            .theme-toggle:hover {
+                color: var(--text-primary);
+                border-color: var(--border-light);
+                background: var(--bg-secondary);
+            }
+
+            /* Main Layout */
+            .main {
+                max-width: 900px;
+                margin: 0 auto;
+                padding: 32px 24px;
+            }
+
+            /* Section Headers */
+            .section-header {
+                margin-bottom: 24px;
+            }
+
+            .section-title {
                 font-size: 11px;
                 font-weight: 600;
                 text-transform: uppercase;
                 letter-spacing: 0.08em;
-                color: var(--muted);
-                margin-bottom: 14px;
+                color: var(--text-secondary);
+                margin-bottom: 4px;
             }
 
+            .section-description {
+                font-size: 13px;
+                color: var(--text-muted);
+            }
+
+            /* Cards */
             .card {
-                background: var(--surface);
+                background: var(--bg-secondary);
                 border: 1px solid var(--border);
-                border-radius: 10px;
-                padding: 20px;
+                border-radius: var(--radius-lg);
+                padding: 24px;
                 margin-bottom: 24px;
+                box-shadow: var(--shadow-sm);
+                transition: box-shadow 0.2s;
             }
 
-            .field {
-                margin-bottom: 16px;
-            }
-            .field:last-child {
-                margin-bottom: 0;
+            .card:hover {
+                box-shadow: var(--shadow-md);
             }
 
-            label {
-                display: block;
-                font-size: 12px;
-                color: var(--muted);
-                margin-bottom: 6px;
-                font-weight: 500;
-            }
-
-            input {
-                width: 100%;
-                background: var(--bg);
-                border: 1px solid var(--border);
-                color: var(--text);
-                border-radius: 7px;
-                padding: 9px 12px;
-                font-family: "DM Mono", monospace;
-                font-size: 13px;
-                outline: none;
-                transition: border-color 0.15s;
-            }
-            input:focus {
-                border-color: var(--accent);
-            }
-
-            .hint {
-                font-size: 11px;
-                color: var(--muted);
-                margin-top: 5px;
-                line-height: 1.5;
-            }
-            .hint a {
-                color: var(--accent);
-                text-decoration: none;
-            }
-
-            .row {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
+            .card-header {
+                display: flex;
+                align-items: center;
                 gap: 12px;
+                margin-bottom: 20px;
+                padding-bottom: 16px;
+                border-bottom: 1px solid var(--border);
             }
 
-            .btn {
-                padding: 10px 20px;
-                border-radius: 8px;
-                border: none;
-                font-family: "DM Sans", sans-serif;
-                font-size: 13px;
-                font-weight: 600;
-                cursor: pointer;
-                transition: opacity 0.15s;
+            .card-icon {
+                width: 40px;
+                height: 40px;
+                border-radius: var(--radius-sm);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
             }
+
+            .card-icon.blue {
+                background: var(--accent-dim);
+                color: var(--accent);
+            }
+
+            .card-icon.green {
+                background: var(--success-dim);
+                color: var(--success);
+            }
+
+            .card-icon.orange {
+                background: rgba(245, 166, 35, 0.1);
+                color: var(--warning);
+            }
+
+            .card-title {
+                font-size: 16px;
+                font-weight: 600;
+                margin-bottom: 2px;
+            }
+
+            .card-subtitle {
+                font-size: 12px;
+                color: var(--text-muted);
+            }
+
+            /* User Chip */
+            .user-card {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+            }
+
+            .user-avatar {
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                border: 2px solid var(--border);
+            }
+
+            .user-info {
+                flex: 1;
+            }
+
+            .user-name {
+                font-weight: 600;
+                font-size: 15px;
+            }
+
+            .user-status {
+                font-size: 12px;
+                color: var(--success);
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .user-status::before {
+                content: "";
+                width: 6px;
+                height: 6px;
+                background: var(--success);
+                border-radius: 50%;
+            }
+
+            .btn-signout {
+                background: var(--bg-tertiary);
+                color: var(--text-secondary);
+                border: 1px solid var(--border);
+                font-size: 13px;
+                padding: 8px 16px;
+                border-radius: var(--radius-sm);
+                cursor: pointer;
+                font-weight: 500;
+                transition: all 0.2s;
+            }
+
+            .btn-signout:hover {
+                color: var(--error);
+                border-color: var(--error);
+                background: var(--error-dim);
+            }
+
+            /* Auth States */
+            .auth-unauthed {
+                text-align: center;
+                padding: 20px 0;
+            }
+
+            .auth-unauthed p {
+                font-size: 13px;
+                color: var(--text-muted);
+                margin-bottom: 16px;
+                line-height: 1.6;
+            }
+
             .btn-primary {
                 background: var(--accent);
                 color: #fff;
-            }
-            .btn-primary:hover {
-                opacity: 0.88;
-            }
-
-            .status {
-                margin-top: 14px;
-                padding: 9px 12px;
-                border-radius: 7px;
-                font-size: 12px;
-                display: none;
-            }
-            .status.show {
-                display: block;
-            }
-            .status.success {
-                background: #0f3326;
-                color: var(--success);
-                border: 1px solid #1c5c3e;
-            }
-            .status.error {
-                background: #331414;
-                color: var(--error);
-                border: 1px solid #5c1c1c;
-            }
-
-            .auth-section {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                flex-wrap: wrap;
-                gap: 10px;
-            }
-            .user-chip {
-                display: flex;
+                border: none;
+                padding: 10px 20px;
+                border-radius: var(--radius-sm);
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: inline-flex;
                 align-items: center;
                 gap: 8px;
-                padding: 7px 10px;
-                background: var(--bg);
-                border: 1px solid var(--border);
-                border-radius: 8px;
-            }
-            .user-chip img {
-                width: 24px;
-                height: 24px;
-                border-radius: 50%;
-            }
-            .user-chip span {
-                font-size: 13px;
-                font-weight: 500;
-            }
-            .btn-ghost {
-                background: var(--surface);
-                color: var(--muted);
-                border: 1px solid var(--border);
-                font-size: 12px;
-                padding: 7px 12px;
-            }
-            .btn-ghost:hover {
-                color: var(--error);
-                border-color: var(--error);
             }
 
-            /* ── Device flow pending state ── */
-            #pending-view {
-                display: none;
+            .btn-primary:hover {
+                background: var(--accent-hover);
+                box-shadow: var(--shadow-md);
             }
+
+            .btn-primary:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            /* Pending State */
+            .auth-pending {
+                padding: 20px 0;
+            }
+
+            .pending-text {
+                font-size: 13px;
+                color: var(--text-muted);
+                margin-bottom: 12px;
+            }
+
             .code-box {
-                background: var(--bg);
-                border: 1px solid var(--border);
-                border-radius: 8px;
-                padding: 14px 16px;
-                margin-top: 12px;
+                background: var(--bg-primary);
+                border: 2px dashed var(--border);
+                border-radius: var(--radius-md);
+                padding: 20px;
+                text-align: center;
+                margin-bottom: 16px;
             }
-            .code-box .code {
-                font-family: "DM Mono", monospace;
-                font-size: 26px;
-                font-weight: 500;
-                letter-spacing: 0.14em;
+
+            .code {
+                font-family: "JetBrains Mono", monospace;
+                font-size: 28px;
+                font-weight: 600;
+                letter-spacing: 0.15em;
                 color: var(--accent);
-                margin-bottom: 6px;
+                margin-bottom: 8px;
             }
-            .code-box .hint {
-                font-size: 11px;
-                color: var(--muted);
+
+            .code-hint {
+                font-size: 12px;
+                color: var(--text-muted);
                 line-height: 1.6;
             }
-            .waiting-row {
+
+            .waiting {
                 display: flex;
                 align-items: center;
-                gap: 8px;
-                margin-top: 10px;
-                font-size: 12px;
-                color: var(--muted);
+                gap: 10px;
+                font-size: 13px;
+                color: var(--text-secondary);
+                justify-content: center;
             }
+
             .spinner {
-                width: 13px;
-                height: 13px;
-                flex-shrink: 0;
-                border: 2px solid #252b33;
+                width: 16px;
+                height: 16px;
+                border: 2px solid var(--border);
                 border-top-color: var(--accent);
                 border-radius: 50%;
                 animation: spin 0.7s linear infinite;
             }
+
             @keyframes spin {
                 to {
                     transform: rotate(360deg);
                 }
             }
+
+            /* Form Fields */
+            .form-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+            }
+
+            .form-field {
+                margin-bottom: 16px;
+            }
+
+            .form-field:last-child {
+                margin-bottom: 0;
+            }
+
+            .form-field.full-width {
+                grid-column: 1 / -1;
+            }
+
+            label {
+                display: block;
+                font-size: 13px;
+                font-weight: 500;
+                color: var(--text-secondary);
+                margin-bottom: 8px;
+            }
+
+            input[type="text"],
+            select {
+                width: 100%;
+                background: var(--bg-primary);
+                border: 1px solid var(--border);
+                color: var(--text-primary);
+                border-radius: var(--radius-sm);
+                padding: 10px 12px;
+                font-family: "JetBrains Mono", monospace;
+                font-size: 13px;
+                outline: none;
+                transition: all 0.2s;
+            }
+
+            input[type="text"]:focus,
+            select:focus {
+                border-color: var(--accent);
+                box-shadow: 0 0 0 3px var(--accent-dim);
+            }
+
+            input[type="text"]::placeholder {
+                color: var(--text-muted);
+            }
+
+            select {
+                font-family: "Inter", sans-serif;
+                cursor: pointer;
+            }
+
+            .field-hint {
+                font-size: 12px;
+                color: var(--text-muted);
+                margin-top: 6px;
+                line-height: 1.5;
+            }
+
+            .field-hint code {
+                background: var(--bg-tertiary);
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-family: "JetBrains Mono", monospace;
+                font-size: 11px;
+            }
+
+            /* Checkbox */
+            .checkbox-field {
+                display: flex;
+                align-items: flex-start;
+                gap: 12px;
+                padding: 16px;
+                background: var(--bg-primary);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-sm);
+                margin-bottom: 12px;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+
+            .checkbox-field:hover {
+                border-color: var(--border-light);
+            }
+
+            .checkbox-field input[type="checkbox"] {
+                width: 18px;
+                height: 18px;
+                margin: 0;
+                cursor: pointer;
+                accent-color: var(--accent);
+            }
+
+            .checkbox-content {
+                flex: 1;
+            }
+
+            .checkbox-label {
+                font-size: 14px;
+                font-weight: 500;
+                margin-bottom: 4px;
+                display: block;
+            }
+
+            .checkbox-hint {
+                font-size: 12px;
+                color: var(--text-muted);
+                line-height: 1.5;
+            }
+
+            /* Save Button */
+            .save-section {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                margin-bottom: 32px;
+            }
+
+            .btn-save {
+                background: var(--accent);
+                color: #fff;
+                border: none;
+                padding: 12px 24px;
+                border-radius: var(--radius-sm);
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .btn-save:hover {
+                background: var(--accent-hover);
+                box-shadow: var(--shadow-md);
+            }
+
+            .status {
+                padding: 10px 16px;
+                border-radius: var(--radius-sm);
+                font-size: 13px;
+                display: none;
+            }
+
+            .status.show {
+                display: block;
+            }
+
+            .status.success {
+                background: var(--success-dim);
+                color: var(--success);
+                border: 1px solid rgba(61, 214, 140, 0.2);
+            }
+
+            .status.error {
+                background: var(--error-dim);
+                color: var(--error);
+                border: 1px solid rgba(247, 111, 111, 0.2);
+            }
+
+            /* Statistics Grid */
+            .stats-grid {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 16px;
+            }
+
+            .stat-card {
+                background: var(--bg-primary);
+                border: 1px solid var(--border);
+                border-radius: var(--radius-md);
+                padding: 20px;
+                transition: all 0.2s;
+            }
+
+            .stat-card:hover {
+                border-color: var(--border-light);
+                box-shadow: var(--shadow-sm);
+            }
+
+            .stat-label {
+                font-size: 11px;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--text-muted);
+                margin-bottom: 8px;
+            }
+
+            .stat-value {
+                font-size: 28px;
+                font-weight: 700;
+                letter-spacing: -0.02em;
+            }
+
+            .stat-value.accent {
+                color: var(--accent);
+            }
+
+            .stat-value.success {
+                color: var(--success);
+            }
+
+            .stat-value.muted {
+                color: var(--text-secondary);
+            }
+
+            .stat-subtitle {
+                font-size: 12px;
+                color: var(--text-muted);
+                margin-top: 4px;
+            }
+
+            .stats-loading {
+                text-align: center;
+                padding: 40px 20px;
+                color: var(--text-muted);
+                font-size: 13px;
+            }
+
+            .btn-refresh {
+                background: var(--bg-tertiary);
+                color: var(--text-secondary);
+                border: 1px solid var(--border);
+                padding: 8px 16px;
+                border-radius: var(--radius-sm);
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s;
+                margin-top: 16px;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+            }
+
+            .btn-refresh:hover {
+                color: var(--text-primary);
+                border-color: var(--border-light);
+            }
+
+            /* Footer */
+            .footer {
+                margin-top: 48px;
+                padding-top: 24px;
+                border-top: 1px solid var(--border);
+                text-align: center;
+            }
+
+            .footer-text {
+                font-size: 12px;
+                color: var(--text-muted);
+                line-height: 1.6;
+            }
+
+            .footer-text a {
+                color: var(--accent);
+                text-decoration: none;
+            }
+
+            .footer-text a:hover {
+                text-decoration: underline;
+            }
+
+            /* Responsive */
+            @media (max-width: 768px) {
+                .form-grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .stats-grid {
+                    grid-template-columns: repeat(2, 1fr);
+                }
+
+                .user-card {
+                    flex-direction: column;
+                    text-align: center;
+                }
+
+                .save-section {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+            }
+
+            @media (max-width: 480px) {
+                .stats-grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .main {
+                    padding: 24px 16px;
+                }
+            }
+
+            /* Hidden utility */
+            .hidden {
+                display: none !important;
+            }
         </style>
     </head>
     <body>
-        <div class="page">
-            <div class="logo">
-                <svg width="24" height="24" viewBox="0 0 18 18" fill="none">
-                    <rect
-                        width="18"
-                        height="18"
-                        rx="5"
-                        fill="#4f8ef7"
-                        opacity="0.15"
-                    />
-                    <path
-                        d="M4 13L7.5 6L10 10.5L12 8L14 13"
-                        stroke="#4f8ef7"
-                        stroke-width="1.6"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                    />
-                </svg>
-                ExcaliHub Settings
-                <button
-                    id="btn-theme-toggle"
-                    style="
-                        margin-left: auto;
-                        background: none;
-                        border: 1px solid var(--border);
-                        color: var(--muted);
-                        cursor: pointer;
-                        padding: 6px;
-                        border-radius: 6px;
-                        display: flex;
-                        align-items: center;
-                        transition:
-                            color 0.15s,
-                            border-color 0.15s;
-                    "
-                    title="Toggle theme"
-                >
-                    <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 14 14"
-                        fill="none"
-                        class="theme-icon-light"
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 18 18"
+                            fill="none"
+                        >
+                            <rect
+                                width="18"
+                                height="18"
+                                rx="5"
+                                fill="currentColor"
+                                opacity="0.2"
+                            />
+                            <path
+                                d="M4 13L7.5 6L10 10.5L12 8L14 13"
+                                stroke="currentColor"
+                                stroke-width="1.6"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1>ExcaliHub Settings</h1>
+                    </div>
+                    <span class="logo-badge">v2.1</span>
+                </div>
+                <div class="header-actions">
+                    <button
+                        id="btn-theme-toggle"
+                        class="theme-toggle"
+                        title="Toggle theme"
                     >
-                        <circle
-                            cx="7"
-                            cy="7"
-                            r="3"
-                            stroke="currentColor"
-                            stroke-width="1.3"
-                        />
-                        <path
-                            d="M7 1v2M7 11v2M1 7h2M11 7h2M2.8 2.8l1.4 1.4M9.8 9.8l1.4 1.4M2.8 11.2l1.4-1.4M9.8 4.2l1.4-1.4"
-                            stroke="currentColor"
-                            stroke-width="1.3"
-                            stroke-linecap="round"
-                        />
-                    </svg>
-                    <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 14 14"
-                        fill="none"
-                        class="theme-icon-dark"
-                        style="display: none"
-                    >
-                        <path
-                            d="M12 8.5A5.5 5.5 0 015.5 2 5.5 5.5 0 1012 8.5z"
-                            stroke="currentColor"
-                            stroke-width="1.3"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        />
-                    </svg>
-                </button>
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 14 14"
+                            fill="none"
+                            class="theme-icon-light"
+                        >
+                            <circle
+                                cx="7"
+                                cy="7"
+                                r="3"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                            />
+                            <path
+                                d="M7 1v2M7 11v2M1 7h2M11 7h2M2.8 2.8l1.4 1.4M9.8 9.8l1.4 1.4M2.8 11.2l1.4-1.4M9.8 4.2l1.4-1.4"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                        <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 14 14"
+                            fill="none"
+                            class="theme-icon-dark"
+                            style="display: none"
+                        >
+                            <path
+                                d="M12 8.5A5.5 5.5 0 015.5 2 5.5 5.5 0 1012 8.5z"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- GitHub Account Section -->
+            <div class="section-header">
+                <div class="section-title">GitHub Account</div>
+                <div class="section-description">
+                    Manage your GitHub connection and authentication
+                </div>
             </div>
 
-            <h2>GitHub Account</h2>
             <div class="card">
-                <div class="auth-section">
-                    <div
-                        id="authed-view"
-                        style="
-                            display: none;
-                            align-items: center;
-                            gap: 10px;
-                            flex-wrap: wrap;
-                        "
-                    >
-                        <div class="user-chip">
-                            <img id="opt-avatar" src="" alt="" />
-                            <span id="opt-login"></span>
+                <!-- Authenticated State -->
+                <div id="authed-view" style="display: none">
+                    <div class="user-card">
+                        <img
+                            id="opt-avatar"
+                            class="user-avatar"
+                            src=""
+                            alt="User avatar"
+                        />
+                        <div class="user-info">
+                            <div class="user-name" id="opt-login"></div>
+                            <div class="user-status">Connected</div>
                         </div>
-                        <button class="btn btn-ghost" id="btn-signout">
-                            Sign out
+                        <button class="btn-signout" id="btn-signout">
+                            Sign Out
                         </button>
                     </div>
-                    <div id="unauthed-view">
-                        <p
-                            style="
-                                font-size: 12px;
-                                color: var(--muted);
-                                margin-bottom: 12px;
-                            "
-                        >
-                            Connect via GitHub Device Flow — no passwords
-                            stored.
+                </div>
+
+                <!-- Unauthenticated State -->
+                <div id="unauthed-view">
+                    <div class="auth-unauthed">
+                        <p>
+                            Connect via GitHub Device Flow — no passwords stored
+                            locally.
                         </p>
-                        <button class="btn btn-primary" id="btn-connect-opt">
+                        <button class="btn-primary" id="btn-connect-opt">
+                            <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                            >
+                                <path
+                                    d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 1.2a5.8 5.8 0 110 11.6A5.8 5.8 0 018 2.2zM6 6.5C6 5.4 6.9 4.5 8 4.5s2 .9 2 2c0 .8-.5 1.5-1.2 1.8v.7a.8.8 0 01-1.6 0v-1a.8.8 0 01.8-.8c.2 0 .4-.2.4-.5 0-.2-.2-.4-.4-.4s-.4.2-.4.4A.8.8 0 016 6.5zM8 11.5a.8.8 0 110-1.6.8.8 0 010 1.6z"
+                                    fill="currentColor"
+                                />
+                            </svg>
                             Connect GitHub
                         </button>
                     </div>
+                </div>
 
-                    <!-- Pending: shown while waiting for user to enter code on GitHub -->
-                    <div id="pending-view">
-                        <p
-                            style="
-                                font-size: 12px;
-                                color: var(--muted);
-                                margin-bottom: 4px;
-                            "
-                        >
+                <!-- Pending State -->
+                <div id="pending-view" style="display: none">
+                    <div class="auth-pending">
+                        <div class="pending-text">
                             A GitHub tab has been opened. Enter this code there:
-                        </p>
+                        </div>
                         <div class="code-box">
                             <div class="code" id="opt-user-code">——</div>
-                            <div class="hint">
+                            <div class="code-hint">
                                 Go to
                                 <strong>github.com/login/device</strong> and
-                                enter the code above.
+                                enter the code above
                             </div>
                         </div>
-                        <div class="waiting-row">
+                        <div class="waiting">
                             <div class="spinner"></div>
-                            Waiting for authorization…
+                            <span>Waiting for authorization…</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <h2>Repository</h2>
+            <!-- Repository Section -->
+            <div class="section-header" style="margin-top: 40px">
+                <div class="section-title">Repository</div>
+                <div class="section-description">
+                    Configure where your drawings will be saved
+                </div>
+            </div>
+
             <div class="card">
-                <div class="row">
-                    <div class="field">
+                <div class="card-header">
+                    <div class="card-icon blue">
+                        <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                        >
+                            <path
+                                d="M2 2.5h4l3 3v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-9a1 1 0 011-1z"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                            />
+                            <path
+                                d="M6 2.5v3h3"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Repository Settings</div>
+                        <div class="card-subtitle">
+                            Your drawings will be saved here
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-field">
                         <label>Owner (user or org)</label>
                         <input
                             type="text"
@@ -404,7 +902,7 @@
                             placeholder="your-username"
                         />
                     </div>
-                    <div class="field">
+                    <div class="form-field">
                         <label>Repository</label>
                         <input
                             type="text"
@@ -412,14 +910,12 @@
                             placeholder="my-excalidraw"
                         />
                     </div>
-                </div>
-                <div class="row" style="margin-top: 14px">
-                    <div class="field">
+                    <div class="form-field">
                         <label>Branch</label>
                         <input type="text" id="branch" placeholder="main" />
                     </div>
-                    <div class="field">
-                        <label>Save path</label>
+                    <div class="form-field">
+                        <label>Save Path</label>
                         <input
                             type="text"
                             id="savePath"
@@ -427,52 +923,69 @@
                         />
                     </div>
                 </div>
-                <p class="hint">
-                    The repo must exist and your token must have
+
+                <div class="field-hint" style="margin-top: 16px">
+                    The repository must exist and your token must have
                     <code>repo</code> scope.
-                </p>
+                </div>
             </div>
 
-            <h2>Auto-Save</h2>
-            <div class="card">
-                <div class="field">
-                    <label
-                        style="
-                            display: flex;
-                            align-items: center;
-                            gap: 10px;
-                            cursor: pointer;
-                        "
-                    >
-                        <input
-                            type="checkbox"
-                            id="autoSaveEnabled"
-                            style="width: auto; margin: 0"
-                        />
-                        Enable Auto-Save
-                    </label>
-                    <p class="hint" style="margin-top: 8px">
-                        Automatically backup your drawings to GitHub at regular
-                        intervals.
-                    </p>
+            <!-- Auto-Save Section -->
+            <div class="section-header" style="margin-top: 40px">
+                <div class="section-title">Auto-Save</div>
+                <div class="section-description">
+                    Automatically backup your drawings at regular intervals
                 </div>
-                <div class="field" style="margin-top: 16px">
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon green">
+                        <svg
+                            width="20"
+                            height="20"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                        >
+                            <path
+                                d="M8 2v8M4 6l4 4 4-4"
+                                stroke="currentColor"
+                                stroke-width="1.5"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                            <path
+                                d="M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                            />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="card-title">Automatic Backups</div>
+                        <div class="card-subtitle">
+                            Keep your drawings safe with automatic saves
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    class="checkbox-field"
+                    onclick="document.getElementById('autoSaveEnabled').click()"
+                >
+                    <input type="checkbox" id="autoSaveEnabled" />
+                    <div class="checkbox-content">
+                        <span class="checkbox-label">Enable Auto-Save</span>
+                        <span class="checkbox-hint"
+                            >Automatically backup your drawings to GitHub at
+                            regular intervals</span
+                        >
+                    </div>
+                </div>
+
+                <div class="form-field" style="margin-top: 16px">
                     <label>Backup Interval</label>
-                    <select
-                        id="autoSaveInterval"
-                        style="
-                            width: 100%;
-                            background: var(--bg);
-                            border: 1px solid var(--border);
-                            color: var(--text);
-                            border-radius: 7px;
-                            padding: 9px 12px;
-                            font-size: 13px;
-                            outline: none;
-                            font-family: &quot;DM Sans&quot;, sans-serif;
-                            cursor: pointer;
-                        "
-                    >
+                    <select id="autoSaveInterval">
                         <option value="1">Every 1 minute</option>
                         <option value="5" selected>Every 5 minutes</option>
                         <option value="10">Every 10 minutes</option>
@@ -480,203 +993,140 @@
                         <option value="30">Every 30 minutes</option>
                     </select>
                 </div>
-                <div class="field" style="margin-top: 16px">
-                    <label
-                        style="
-                            display: flex;
-                            align-items: center;
-                            gap: 10px;
-                            cursor: pointer;
-                        "
-                    >
-                        <input
-                            type="checkbox"
-                            id="autoSaveCleanOld"
-                            style="width: auto; margin: 0"
-                        />
-                        Clean old backups (keep last 10 per drawing)
-                    </label>
-                    <p class="hint" style="margin-top: 8px">
-                        Prevents repository bloat by removing old auto-saved
-                        versions.
-                    </p>
-                </div>
-                <p class="hint" style="margin-top: 12px">
-                    Auto-saves are stored in <code>_autosave/</code> folder with
-                    timestamps.
-                </p>
-            </div>
 
-            <button class="btn btn-primary" id="btn-save-settings">
-                Save Settings
-            </button>
-            <div class="status" id="save-status"></div>
-
-            <h2>Statistics</h2>
-            <div class="card">
                 <div
-                    id="stats-loading"
-                    style="
-                        text-align: center;
-                        color: var(--muted);
-                        font-size: 12px;
-                        padding: 12px;
+                    class="checkbox-field"
+                    style="margin-top: 16px"
+                    onclick="
+                        document.getElementById('autoSaveCleanOld').click()
                     "
                 >
-                    Loading statistics...
-                </div>
-                <div id="stats-content" style="display: none">
-                    <div
-                        style="
-                            display: grid;
-                            grid-template-columns: 1fr 1fr;
-                            gap: 12px;
-                        "
-                    >
-                        <div
-                            style="
-                                background: var(--bg);
-                                border: 1px solid var(--border);
-                                border-radius: 8px;
-                                padding: 14px;
-                            "
+                    <input type="checkbox" id="autoSaveCleanOld" />
+                    <div class="checkbox-content">
+                        <span class="checkbox-label">Clean Old Backups</span>
+                        <span class="checkbox-hint"
+                            >Prevent repository bloat by keeping only the last
+                            10 versions per drawing</span
                         >
-                            <div
-                                style="
-                                    font-size: 11px;
-                                    color: var(--muted);
-                                    text-transform: uppercase;
-                                    letter-spacing: 0.05em;
-                                    font-weight: 500;
-                                    margin-bottom: 6px;
-                                "
-                            >
-                                Total Files
-                            </div>
-                            <div
-                                id="stat-total-files"
-                                style="
-                                    font-size: 24px;
-                                    font-weight: 600;
-                                    color: var(--accent);
-                                "
-                            >
-                                -
-                            </div>
-                        </div>
-                        <div
-                            style="
-                                background: var(--bg);
-                                border: 1px solid var(--border);
-                                border-radius: 8px;
-                                padding: 14px;
-                            "
-                        >
-                            <div
-                                style="
-                                    font-size: 11px;
-                                    color: var(--muted);
-                                    text-transform: uppercase;
-                                    letter-spacing: 0.05em;
-                                    font-weight: 500;
-                                    margin-bottom: 6px;
-                                "
-                            >
-                                Total Size
-                            </div>
-                            <div
-                                id="stat-total-size"
-                                style="
-                                    font-size: 24px;
-                                    font-weight: 600;
-                                    color: var(--success);
-                                "
-                            >
-                                -
-                            </div>
-                        </div>
-                        <div
-                            style="
-                                background: var(--bg);
-                                border: 1px solid var(--border);
-                                border-radius: 8px;
-                                padding: 14px;
-                            "
-                        >
-                            <div
-                                style="
-                                    font-size: 11px;
-                                    color: var(--muted);
-                                    text-transform: uppercase;
-                                    letter-spacing: 0.05em;
-                                    font-weight: 500;
-                                    margin-bottom: 6px;
-                                "
-                            >
-                                Last Saved
-                            </div>
-                            <div
-                                id="stat-last-saved"
-                                style="
-                                    font-size: 13px;
-                                    font-weight: 500;
-                                    color: var(--text);
-                                "
-                            >
-                                -
-                            </div>
-                        </div>
-                        <div
-                            style="
-                                background: var(--bg);
-                                border: 1px solid var(--border);
-                                border-radius: 8px;
-                                padding: 14px;
-                            "
-                        >
-                            <div
-                                style="
-                                    font-size: 11px;
-                                    color: var(--muted);
-                                    text-transform: uppercase;
-                                    letter-spacing: 0.05em;
-                                    font-weight: 500;
-                                    margin-bottom: 6px;
-                                "
-                            >
-                                Avg File Size
-                            </div>
-                            <div
-                                id="stat-avg-size"
-                                style="
-                                    font-size: 24px;
-                                    font-weight: 600;
-                                    color: var(--warn);
-                                "
-                            >
-                                -
-                            </div>
-                        </div>
                     </div>
                 </div>
-                <button
-                    class="btn btn-ghost"
-                    id="btn-refresh-stats"
-                    style="margin-top: 14px; width: 100%; display: none"
-                >
-                    Refresh Statistics
-                </button>
+
+                <div class="field-hint" style="margin-top: 16px">
+                    Auto-saves are stored in <code>_autosave/</code> folder with
+                    timestamps.
+                </div>
             </div>
 
-            <p class="hint" style="margin-top: 20px">
-                Need a GitHub OAuth App?
-                <a href="https://github.com/settings/developers" target="_blank"
-                    >Create one here</a
-                >
-                — enable Device Flow, no callback URL needed. Paste your
-                <code>client_id</code> into <code>background.js</code>.
-            </p>
-        </div>
+            <!-- Save Button -->
+            <div class="save-section">
+                <button class="btn-save" id="btn-save-settings">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path
+                            d="M3 11.5v1.5h10V11.5M8 3v7M5 7.5L8 10.5l3-3"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                    Save Settings
+                </button>
+                <div class="status" id="save-status"></div>
+            </div>
+
+            <!-- Statistics Section -->
+            <div class="section-header" style="margin-top: 48px">
+                <div class="section-title">Statistics</div>
+                <div class="section-description">
+                    Overview of your saved drawings
+                </div>
+            </div>
+
+            <div class="card">
+                <div id="stats-loading" class="stats-loading">
+                    <div
+                        class="spinner"
+                        style="display: inline-block; margin-bottom: 12px"
+                    ></div>
+                    <div>Loading statistics…</div>
+                </div>
+                <div id="stats-content" style="display: none">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Files</div>
+                            <div
+                                class="stat-value accent"
+                                id="stat-total-files"
+                            >
+                                -
+                            </div>
+                            <div class="stat-subtitle">Excalidraw drawings</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Total Size</div>
+                            <div
+                                class="stat-value success"
+                                id="stat-total-size"
+                            >
+                                -
+                            </div>
+                            <div class="stat-subtitle">Repository usage</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Last Saved</div>
+                            <div class="stat-value muted" id="stat-last-saved">
+                                -
+                            </div>
+                            <div class="stat-subtitle">Most recent backup</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Avg Size</div>
+                            <div class="stat-value accent" id="stat-avg-size">
+                                -
+                            </div>
+                            <div class="stat-subtitle">Per drawing</div>
+                        </div>
+                    </div>
+                    <button class="btn-refresh" id="btn-refresh-stats">
+                        <svg
+                            width="14"
+                            height="14"
+                            viewBox="0 0 14 14"
+                            fill="none"
+                        >
+                            <path
+                                d="M1.5 7a5.5 5.5 0 019.8-3.2M12.5 7a5.5 5.5 0 01-9.8 3.2"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                                stroke-linecap="round"
+                            />
+                            <path
+                                d="M11.5 1v3h-3M2.5 13v-3h3"
+                                stroke="currentColor"
+                                stroke-width="1.3"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                <div class="footer-text">
+                    Need a GitHub OAuth App?
+                    <a
+                        href="https://github.com/settings/developers"
+                        target="_blank"
+                        >Create one here</a
+                    >
+                    — enable Device Flow, no callback URL needed.
+                </div>
+            </div>
+        </main>
+
         <script src="options.js"></script>
     </body>
 </html>
