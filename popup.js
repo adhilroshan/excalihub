@@ -1,13 +1,18 @@
 // popup.js
 
 const STATES = [
-  "not-configured", "not-authed", "auth-pending",
-  "not-on-excalidraw", "ready"
+  "not-configured",
+  "not-authed",
+  "auth-pending",
+  "not-on-excalidraw",
+  "ready",
 ];
 
 function showState(name) {
   STATES.forEach((s) => {
-    document.getElementById(`state-${s}`)?.classList.toggle("active", s === name);
+    document
+      .getElementById(`state-${s}`)
+      ?.classList.toggle("active", s === name);
   });
 }
 
@@ -45,10 +50,18 @@ async function getActiveExcalidrawTab() {
 
 async function init() {
   const configured = await isConfigured();
-  if (!configured) { showState("not-configured"); return; }
+  if (!configured) {
+    showState("not-configured");
+    return;
+  }
 
-  const { authenticated, user } = await chrome.runtime.sendMessage({ type: "GET_AUTH_STATUS" });
-  if (!authenticated) { showState("not-authed"); return; }
+  const { authenticated, user } = await chrome.runtime.sendMessage({
+    type: "GET_AUTH_STATUS",
+  });
+  if (!authenticated) {
+    showState("not-authed");
+    return;
+  }
 
   const tab = await getActiveExcalidrawTab();
   if (!tab) {
@@ -66,7 +79,9 @@ async function init() {
   try {
     const result = await chrome.tabs.sendMessage(tab.id, { type: "GET_SCENE" });
     if (result?.title) {
-      document.getElementById("filename-input").value = buildFilename(result.title);
+      document.getElementById("filename-input").value = buildFilename(
+        result.title,
+      );
     } else {
       document.getElementById("filename-input").value = buildFilename();
     }
@@ -115,7 +130,9 @@ document.getElementById("btn-connect").addEventListener("click", async () => {
 
 async function waitForAuth() {
   const check = setInterval(async () => {
-    const { authenticated, user } = await chrome.runtime.sendMessage({ type: "GET_AUTH_STATUS" });
+    const { authenticated, user } = await chrome.runtime.sendMessage({
+      type: "GET_AUTH_STATUS",
+    });
     if (authenticated) {
       clearInterval(check);
       populateUserChip(user, "2");
@@ -131,7 +148,10 @@ document.getElementById("btn-open-excalidraw").addEventListener("click", () => {
 document.getElementById("btn-save").addEventListener("click", async () => {
   const btn = document.getElementById("btn-save");
   const fileName = document.getElementById("filename-input").value.trim();
-  if (!fileName) { showToast("Enter a filename.", "error"); return; }
+  if (!fileName) {
+    showToast("Enter a filename.", "error");
+    return;
+  }
 
   btn.disabled = true;
   btn.innerHTML = `<div class="spinner show" style="display:block;border-top-color:#fff;border-color:rgba(255,255,255,0.2)"></div> Saving…`;
@@ -140,7 +160,9 @@ document.getElementById("btn-save").addEventListener("click", async () => {
     const tab = await getActiveExcalidrawTab();
     if (!tab) throw new Error("No Excalidraw tab found.");
 
-    const sceneResult = await chrome.tabs.sendMessage(tab.id, { type: "GET_SCENE" });
+    const sceneResult = await chrome.tabs.sendMessage(tab.id, {
+      type: "GET_SCENE",
+    });
     if (sceneResult?.error) throw new Error(sceneResult.error);
 
     const settings = await getSettings();
@@ -149,19 +171,67 @@ document.getElementById("btn-save").addEventListener("click", async () => {
       scene: sceneResult.scene,
       fileName,
       settings: {
-        owner:    settings.owner,
-        repo:     settings.repo,
-        branch:   settings.branch || "main",
+        owner: settings.owner,
+        repo: settings.repo,
+        branch: settings.branch || "main",
         savePath: settings.savePath || "drawings/",
       },
     });
 
     if (saveResult?.error) throw new Error(saveResult.error);
 
-    showToast(
-      `✓ Saved → <a href="${saveResult.url}" target="_blank">${saveResult.path}</a>`,
-      "success"
-    );
+    // Check if there's a conflict
+    if (saveResult.conflict) {
+      // Show conflict dialog
+      const choice = await showConflictDialog(fileName);
+
+      if (choice === "cancel") {
+        showToast("Save cancelled.", "success");
+        return;
+      } else if (choice === "overwrite") {
+        // Overwrite the file
+        const overwriteResult = await chrome.runtime.sendMessage({
+          type: "OVERWRITE_SCENE",
+          scene: sceneResult.scene,
+          fileName,
+          settings: {
+            owner: settings.owner,
+            repo: settings.repo,
+            branch: settings.branch || "main",
+            savePath: settings.savePath || "drawings/",
+          },
+          existingSha: saveResult.existingSha,
+        });
+
+        if (overwriteResult?.error) throw new Error(overwriteResult.error);
+        showToast(
+          `✓ Updated → <a href="${overwriteResult.url}" target="_blank">${overwriteResult.path}</a>`,
+          "success",
+        );
+      } else if (choice === "rename") {
+        // Auto-rename with _v2 suffix
+        const nameParts =
+          fileName.lastIndexOf(".") > -1
+            ? [
+                fileName.slice(0, fileName.lastIndexOf(".")),
+                fileName.slice(fileName.lastIndexOf(".")),
+              ]
+            : [fileName, ".excalidraw"];
+
+        const newFileName = `${nameParts[0]}_v2${nameParts[1] || ".excalidraw"}`;
+        document.getElementById("filename-input").value = newFileName;
+        showToast(
+          `File renamed to ${newFileName}. Click Save again.`,
+          "success",
+        );
+        return; // Don't reset button yet
+      }
+    } else if (saveResult?.ok) {
+      showToast(
+        `✓ Saved → <a href="${saveResult.url}" target="_blank">${saveResult.path}</a>`,
+        "success",
+      );
+    }
   } catch (err) {
     showToast(err.message, "error");
   } finally {
@@ -171,6 +241,109 @@ document.getElementById("btn-save").addEventListener("click", async () => {
     </svg> Save to GitHub`;
   }
 });
+
+// Show conflict dialog
+function showConflictDialog(fileName) {
+  return new Promise((resolve) => {
+    // Create overlay
+    const overlay = document.createElement("div");
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    `;
+
+    // Create dialog
+    const dialog = document.createElement("div");
+    dialog.style.cssText = `
+      background: #161a1f;
+      border: 1px solid #252b33;
+      border-radius: 10px;
+      padding: 20px;
+      max-width: 340px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    `;
+
+    dialog.innerHTML = `
+      <div style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">File Already Exists</div>
+      <div style="font-size: 12px; color: #6b7685; margin-bottom: 16px; line-height: 1.5;">
+        <strong style="color: #e8edf2;">${fileName}</strong> already exists in your repository. What would you like to do?
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button id="conflict-overwrite" style="
+          padding: 10px 14px;
+          border-radius: 8px;
+          border: none;
+          background: #4f8ef7;
+          color: #fff;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          font-family: 'DM Sans', sans-serif;
+        ">Overwrite Existing File</button>
+        <button id="conflict-rename" style="
+          padding: 10px 14px;
+          border-radius: 8px;
+          border: 1px solid #252b33;
+          background: #0d0f11;
+          color: #e8edf2;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          font-family: 'DM Sans', sans-serif;
+        ">Save as New Version (_v2)</button>
+        <button id="conflict-cancel" style="
+          padding: 10px 14px;
+          border-radius: 8px;
+          border: 1px solid #252b33;
+          background: transparent;
+          color: #6b7685;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          font-family: 'DM Sans', sans-serif;
+        ">Cancel</button>
+      </div>
+    `;
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    // Event listeners
+    document
+      .getElementById("conflict-overwrite")
+      .addEventListener("click", () => {
+        overlay.remove();
+        resolve("overwrite");
+      });
+
+    document.getElementById("conflict-rename").addEventListener("click", () => {
+      overlay.remove();
+      resolve("rename");
+    });
+
+    document.getElementById("conflict-cancel").addEventListener("click", () => {
+      overlay.remove();
+      resolve("cancel");
+    });
+
+    // Close on overlay click
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+        resolve("cancel");
+      }
+    });
+  });
+}
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 init();

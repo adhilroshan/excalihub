@@ -87,6 +87,83 @@ function injectSidebar() {
             </svg>
           </button>
         </div>
+
+        <!-- Search and Sort Controls -->
+        <div class="search-sort-controls" style="margin-bottom: 12px;">
+          <div class="search-box" style="position: relative; margin-bottom: 8px;">
+            <input type="text" id="excalihub-search" placeholder="Search files..." style="
+              width: 85%;
+              background: #0d0f11;
+              border: 1px solid #252b33;
+              color: #e8edf2;
+              border-radius: 6px;
+              padding: 7px 10px 7px 30px;
+              font-size: 12px;
+              outline: none;
+              transition: border-color 0.15s;
+              font-family: 'DM Sans', sans-serif;
+            " />
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style="
+              position: absolute;
+              left: 9px;
+              top: 50%;
+              transform: translateY(-50%);
+              color: #6b7685;
+              pointer-events: none;
+            ">
+              <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.3"/>
+              <path d="M9.5 9.5L12.5 12.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+            </svg>
+            <button class="clear-search" id="excalihub-clear-search" title="Clear search" style="
+              position: absolute;
+              right: 8px;
+              top: 50%;
+              transform: translateY(-50%);
+              background: none;
+              border: none;
+              color: #6b7685;
+              cursor: pointer;
+              padding: 2px;
+              display: none;
+              border-radius: 3px;
+            ">
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+          <div class="sort-controls" style="display: flex; gap: 6px;">
+            <select id="excalihub-sort-by" title="Sort by" style="
+              flex: 1;
+              background: #0d0f11;
+              border: 1px solid #252b33;
+              color: #e8edf2;
+              border-radius: 6px;
+              padding: 6px 8px;
+              font-size: 11px;
+              outline: none;
+              cursor: pointer;
+              font-family: 'DM Sans', sans-serif;
+            ">
+              <option value="name">Name</option>
+              <option value="date">Date Modified</option>
+              <option value="size">Size</option>
+            </select>
+            <button class="sort-order-btn" id="excalihub-sort-order" title="Toggle sort order" style="
+              background: #0d0f11;
+              border: 1px solid #252b33;
+              color: #6b7685;
+              border-radius: 6px;
+              padding: 6px 10px;
+              cursor: pointer;
+              font-size: 11px;
+              transition: color 0.15s, border-color 0.15s;
+            ">
+              ↑
+            </button>
+          </div>
+        </div>
+
         <div class="file-list" id="excalihub-file-list">
           <div class="file-list-empty">Click refresh to load files</div>
         </div>
@@ -281,6 +358,116 @@ function injectSidebar() {
       flex-shrink: 0;
     }
 
+    .file-item .file-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .file-item .file-action-btn {
+      background: none;
+      border: none;
+      color: #6b7685;
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .file-item .file-action-btn:hover {
+      color: #e8edf2;
+      background: #252b33;
+    }
+
+    .file-item .file-action-btn.delete:hover {
+      color: #f76f6f;
+      background: #331414;
+    }
+
+    /* Confirmation dialog */
+    .confirmation-dialog {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000000;
+    }
+
+    .confirmation-dialog .dialog-box {
+      background: #161a1f;
+      border: 1px solid #252b33;
+      border-radius: 10px;
+      padding: 20px;
+      max-width: 320px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .confirmation-dialog .dialog-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .confirmation-dialog .dialog-message {
+      font-size: 12px;
+      color: #6b7685;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .confirmation-dialog .dialog-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .confirmation-dialog .dialog-btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .confirmation-dialog .dialog-btn.cancel {
+      background: #0d0f11;
+      color: #6b7685;
+      border: 1px solid #252b33;
+    }
+
+    .confirmation-dialog .dialog-btn.cancel:hover {
+      border-color: #4f8ef7;
+      color: #4f8ef7;
+    }
+
+    .confirmation-dialog .dialog-btn.primary {
+      background: #4f8ef7;
+      color: #fff;
+    }
+
+    .confirmation-dialog .dialog-btn.primary:hover {
+      opacity: 0.88;
+    }
+
+    .confirmation-dialog .dialog-btn.danger {
+      background: #f76f6f;
+      color: #fff;
+    }
+
+    .confirmation-dialog .dialog-btn.danger:hover {
+      opacity: 0.88;
+    }
+
     #excalihub-float-btn {
       position: fixed;
       bottom: 20px;
@@ -372,6 +559,15 @@ function injectSidebar() {
   const closeBtn = document.getElementById("excalihub-close");
   const refreshBtn = document.getElementById("excalihub-refresh");
   const fileListEl = document.getElementById("excalihub-file-list");
+  const searchInput = document.getElementById("excalihub-search");
+  const clearSearchBtn = document.getElementById("excalihub-clear-search");
+  const sortBySelect = document.getElementById("excalihub-sort-by");
+  const sortOrderBtn = document.getElementById("excalihub-sort-order");
+
+  // State for search and sort
+  let currentFiles = [];
+  let currentSortBy = "name";
+  let currentSortOrder = "asc"; // 'asc' or 'desc'
 
   // Close sidebar
   closeBtn.addEventListener("click", () => {
@@ -419,6 +615,125 @@ function injectSidebar() {
     return date.toLocaleDateString();
   }
 
+  // Load settings from storage
+  async function loadSortSettings() {
+    try {
+      const settings = await chrome.storage.local.get(["sortBy", "sortOrder"]);
+      if (settings.sortBy) {
+        currentSortBy = settings.sortBy;
+        sortBySelect.value = currentSortBy;
+      }
+      if (settings.sortOrder) {
+        currentSortOrder = settings.sortOrder;
+        sortOrderBtn.textContent = currentSortOrder === "asc" ? "↑" : "↓";
+      }
+    } catch (err) {
+      console.error("Failed to load sort settings:", err);
+    }
+  }
+
+  // Save sort settings to storage
+  async function saveSortSettings() {
+    try {
+      await chrome.storage.local.set({
+        sortBy: currentSortBy,
+        sortOrder: currentSortOrder,
+      });
+    } catch (err) {
+      console.error("Failed to save sort settings:", err);
+    }
+  }
+
+  // Sort files based on current sort settings
+  function sortFiles(files) {
+    const sorted = [...files];
+    const modifier = currentSortOrder === "asc" ? 1 : -1;
+
+    sorted.sort((a, b) => {
+      if (currentSortBy === "name") {
+        return modifier * a.name.localeCompare(b.name);
+      } else if (currentSortBy === "size") {
+        return modifier * (a.size - b.size);
+      } else if (currentSortBy === "date") {
+        return modifier * a.name.localeCompare(b.name);
+      }
+      return 0;
+    });
+
+    return sorted;
+  }
+
+  // Filter files based on search term
+  function filterFiles(files, searchTerm) {
+    if (!searchTerm.trim()) return files;
+    const term = searchTerm.toLowerCase().trim();
+    return files.filter((file) => file.name.toLowerCase().includes(term));
+  }
+
+  // Render files with current search and sort applied
+  function renderFiles() {
+    const searchTerm = searchInput.value;
+    const filtered = filterFiles(currentFiles, searchTerm);
+    const sorted = sortFiles(filtered);
+
+    // Show/hide clear search button
+    clearSearchBtn.style.display = searchTerm ? "block" : "none";
+
+    if (sorted.length === 0) {
+      if (searchTerm) {
+        fileListEl.innerHTML = `<div class="file-list-empty">No files matching "${searchTerm}"</div>`;
+      } else {
+        fileListEl.innerHTML =
+          '<div class="file-list-empty">No saved files found</div>';
+      }
+      return;
+    }
+
+    fileListEl.innerHTML = "";
+    sorted.forEach((file) => {
+      const item = document.createElement("div");
+      item.className = "file-item";
+      item.dataset.path = file.path;
+      item.dataset.sha = file.sha;
+      item.innerHTML = `
+        <div class="file-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <path d="M2 1.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M8 1.5v4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="file-info">
+          <div class="file-name">${file.name}</div>
+          <div class="file-meta">${formatSize(file.size)}</div>
+        </div>
+        <div class="file-actions">
+          <button class="file-action-btn delete" title="Delete file" data-path="${file.path}" data-sha="${file.sha}">
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+              <path d="M3 4h8M5 4V3a1 1 0 011-1h2a1 1 0 011 1v1M10 4v7a1 1 0 01-1 1H5a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M6 6v4M8 6v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      `;
+
+      item.addEventListener("click", (e) => {
+        if (e.target.closest(".file-action-btn")) return;
+        loadFile(file.path, item);
+      });
+      fileListEl.appendChild(item);
+    });
+
+    // Add delete button listeners
+    document.querySelectorAll(".file-action-btn.delete").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const path = btn.dataset.path;
+        const sha = btn.dataset.sha;
+        confirmDeleteFile(path, sha);
+      });
+    });
+  }
+
   // Load file list from GitHub
   async function loadFileList() {
     refreshBtn.classList.add("spinning");
@@ -440,27 +755,9 @@ function injectSidebar() {
         return;
       }
 
-      fileListEl.innerHTML = "";
-      response.files.forEach((file) => {
-        const item = document.createElement("div");
-        item.className = "file-item";
-        item.dataset.path = file.path;
-        item.innerHTML = `
-          <div class="file-icon">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M2 1.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/>
-              <path d="M8 1.5v4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="file-info">
-            <div class="file-name">${file.name}</div>
-            <div class="file-meta">${formatSize(file.size)}</div>
-          </div>
-        `;
-
-        item.addEventListener("click", () => loadFile(file.path, item));
-        fileListEl.appendChild(item);
-      });
+      // Store files and apply current sort/search
+      currentFiles = response.files;
+      renderFiles();
 
       showToast(`Loaded ${response.files.length} files`, "success");
     } catch (err) {
@@ -516,7 +813,102 @@ function injectSidebar() {
   // Refresh button
   refreshBtn.addEventListener("click", loadFileList);
 
+  // Search input
+  searchInput.addEventListener("input", () => {
+    renderFiles();
+  });
+
+  // Clear search button
+  clearSearchBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    renderFiles();
+    searchInput.focus();
+  });
+
+  // Sort by dropdown
+  sortBySelect.addEventListener("change", async () => {
+    currentSortBy = sortBySelect.value;
+    await saveSortSettings();
+    renderFiles();
+  });
+
+  // Sort order toggle button
+  sortOrderBtn.addEventListener("click", async () => {
+    currentSortOrder = currentSortOrder === "asc" ? "desc" : "asc";
+    sortOrderBtn.textContent = currentSortOrder === "asc" ? "↑" : "↓";
+    await saveSortSettings();
+    renderFiles();
+  });
+
+  // Show confirmation dialog
+  function showConfirmation(
+    title,
+    message,
+    onConfirm,
+    confirmText = "Confirm",
+    confirmClass = "primary",
+  ) {
+    const overlay = document.createElement("div");
+    overlay.className = "confirmation-dialog";
+    overlay.innerHTML = `
+      <div class="dialog-box">
+        <div class="dialog-title">${title}</div>
+        <div class="dialog-message">${message}</div>
+        <div class="dialog-actions">
+          <button class="dialog-btn cancel">Cancel</button>
+          <button class="dialog-btn ${confirmClass}">${confirmText}</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay
+      .querySelector(".cancel")
+      .addEventListener("click", () => overlay.remove());
+    overlay.querySelector(`.${confirmClass}`).addEventListener("click", () => {
+      overlay.remove();
+      onConfirm();
+    });
+
+    // Close on overlay click
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
+  }
+
+  // Confirm and delete file
+  function confirmDeleteFile(path, sha) {
+    const fileName = path.split("/").pop();
+    showConfirmation(
+      "Delete File",
+      `Are you sure you want to delete <strong>${fileName}</strong>? This action cannot be undone.`,
+      async () => {
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: "DELETE_FILE",
+            path,
+            sha,
+          });
+
+          if (response?.error) {
+            throw new Error(response.error);
+          }
+
+          showToast("File deleted successfully", "success");
+          // Reload file list
+          loadFileList();
+        } catch (err) {
+          showToast(err.message, "error");
+        }
+      },
+      "Delete",
+      "danger",
+    );
+  }
+
   // Auto-load file list when sidebar is injected
+  loadSortSettings();
   loadFileList();
 }
 
@@ -525,6 +917,23 @@ function injectSidebar() {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "GET_SCENE") {
     sendResponse(getExcalidrawScene());
+  }
+
+  if (msg.type === "SHOW_TOAST") {
+    // Show toast from keyboard shortcut
+    const existing = document.querySelector(".toast-notification");
+    if (existing) existing.remove();
+
+    const toast = document.createElement("div");
+    toast.className = `toast-notification ${msg.toastType} show`;
+    toast.textContent = msg.message;
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.remove("show");
+      toast.classList.add("hide");
+      setTimeout(() => toast.remove(), 200);
+    }, 3000);
   }
 });
 

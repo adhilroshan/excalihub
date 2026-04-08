@@ -86,6 +86,7 @@ async function saveToGitHub({
   path,
   content,
   message,
+  existingSha,
 }) {
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
   const headers = {
@@ -94,17 +95,8 @@ async function saveToGitHub({
     "Content-Type": "application/json",
   };
 
-  let sha;
-  try {
-    const check = await fetch(`${url}?ref=${branch}`, { headers });
-    if (check.ok) {
-      const existing = await check.json();
-      sha = existing.sha;
-    }
-  } catch (_) {}
-
   const body = { message, content, branch };
-  if (sha) body.sha = sha;
+  if (existingSha) body.sha = existingSha;
 
   const resp = await fetch(url, {
     method: "PUT",
@@ -169,6 +161,31 @@ async function loadFileFromGitHub({ token, owner, repo, path, branch }) {
   return JSON.parse(content);
 }
 
+// ─── GitHub Delete File ────────────────────────────────────────────────────────
+
+async function deleteFileFromGitHub({ token, owner, repo, branch, path, sha }) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "Content-Type": "application/json",
+  };
+
+  const body = { message: `excalihub: delete ${path}`, branch, sha };
+
+  const resp = await fetch(url, {
+    method: "DELETE",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub API error: ${resp.status}`);
+  }
+  return resp.json();
+}
+
 // ─── Message Handler ─────────────────────────────────────────────────────────
 // IMPORTANT: The listener must NOT be async. Return true synchronously to keep
 // the message channel open, then call sendResponse inside the async handler.
@@ -221,22 +238,44 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
       const filePath = `${settings.savePath.replace(/\/$/, "")}/${fileName}`;
 
-      saveToGitHub({
-        token,
-        owner: settings.owner,
-        repo: settings.repo,
-        branch: settings.branch,
-        path: filePath,
-        content: b64,
-        message: `excalihub: save ${fileName}`,
-      })
-        .then((result) =>
-          sendResponse({
-            ok: true,
-            url: result.content.html_url,
-            path: filePath,
-          }),
-        )
+      // Check if file exists first
+      const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${filePath}?ref=${settings.branch}`;
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      };
+
+      fetch(url, { headers })
+        .then((checkResp) => {
+          if (checkResp.ok) {
+            // File exists - return conflict info
+            return checkResp.json().then((existing) => {
+              sendResponse({
+                conflict: true,
+                existingSha: existing.sha,
+                path: filePath,
+                url: existing.html_url,
+              });
+            });
+          } else {
+            // File doesn't exist - save directly
+            return saveToGitHub({
+              token,
+              owner: settings.owner,
+              repo: settings.repo,
+              branch: settings.branch,
+              path: filePath,
+              content: b64,
+              message: `excalihub: save ${fileName}`,
+            }).then((result) =>
+              sendResponse({
+                ok: true,
+                url: result.content.html_url,
+                path: filePath,
+              }),
+            );
+          }
+        })
         .catch((err) => sendResponse({ error: err.message }));
     });
     return true;
@@ -286,5 +325,130 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       });
     });
     return true;
+  }
+
+  if (msg.type === "DELETE_FILE") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      chrome.storage.sync.get(["owner", "repo", "branch"]).then((settings) => {
+        deleteFileFromGitHub({
+          token,
+          owner: settings.owner,
+          repo: settings.repo,
+          branch: settings.branch || "main",
+          path: msg.path,
+          sha: msg.sha,
+        })
+          .then((result) => sendResponse({ ok: true, result }))
+          .catch((err) => sendResponse({ error: err.message }));
+      });
+    });
+    return true;
+  }
+
+  if (msg.type === "OVERWRITE_SCENE") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      const { scene, fileName, settings, existingSha } = msg;
+      const jsonStr = JSON.stringify(scene, null, 2);
+      const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+      const filePath = `${settings.savePath.replace(/\/$/, "")}/${fileName}`;
+
+      saveToGitHub({
+        token,
+        owner: settings.owner,
+        repo: settings.repo,
+        branch: settings.branch,
+        path: filePath,
+        content: b64,
+        message: `excalihub: update ${fileName}`,
+        existingSha,
+      })
+        .then((result) =>
+          sendResponse({
+            ok: true,
+            url: result.content.html_url,
+            path: filePath,
+          }),
+        )
+        .catch((err) => sendResponse({ error: err.message }));
+    });
+    return true;
+  }
+});
+
+// ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === "quick-save") {
+    // Find active Excalidraw tab
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = tabs[0];
+
+    if (!tab?.url?.includes("excalidraw.com")) {
+      return; // Not on Excalidraw, do nothing
+    }
+
+    // Get scene data
+    const sceneResult = await chrome.tabs.sendMessage(tab.id, {
+      type: "GET_SCENE",
+    });
+    if (sceneResult?.error) return;
+
+    // Get settings
+    const settings = await chrome.storage.sync.get([
+      "owner",
+      "repo",
+      "branch",
+      "savePath",
+    ]);
+    if (!settings.owner || !settings.repo) return;
+
+    // Check authentication
+    const { token } = await chrome.storage.local.get("token");
+    if (!token) return;
+
+    // Generate filename
+    const title = sceneResult.title || "untitled";
+    const date = new Date().toISOString().slice(0, 10);
+    const fileName = `${title}_${date}.excalidraw`;
+
+    // Save to GitHub
+    const jsonStr = JSON.stringify(sceneResult.scene, null, 2);
+    const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+    const filePath = `${settings.savePath || "drawings"}/${fileName}`;
+
+    try {
+      await saveToGitHub({
+        token,
+        owner: settings.owner,
+        repo: settings.repo,
+        branch: settings.branch || "main",
+        path: filePath,
+        content: b64,
+        message: `excalihub: quick save ${fileName}`,
+      });
+
+      // Show success notification
+      chrome.tabs.sendMessage(tab.id, {
+        type: "SHOW_TOAST",
+        message: `✓ Quick saved to GitHub`,
+        toastType: "success",
+      });
+    } catch (err) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: "SHOW_TOAST",
+        message: `Quick save failed: ${err.message}`,
+        toastType: "error",
+      });
+    }
   }
 });
