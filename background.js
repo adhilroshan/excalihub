@@ -186,6 +186,108 @@ async function deleteFileFromGitHub({ token, owner, repo, branch, path, sha }) {
   return resp.json();
 }
 
+// ─── Thumbnail Generation ────────────────────────────────────────────────────
+
+async function generateThumbnail(sceneData) {
+  // Create an offscreen canvas to render the Excalidraw scene
+  const canvas = new OffscreenCanvas(200, 150);
+  const ctx = canvas.getContext("2d");
+
+  // Fill background
+  const bgColor = sceneData.appState?.viewBackgroundColor || "#ffffff";
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, 200, 150);
+
+  // Draw simple bounding boxes for elements
+  const elements = sceneData.elements || [];
+  if (elements.length === 0) return null;
+
+  // Calculate bounding box of all elements
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  elements.forEach((el) => {
+    if (el.x < minX) minX = el.x;
+    if (el.y < minY) minY = el.y;
+    if (el.x + (el.width || 0) > maxX) maxX = el.x + (el.width || 0);
+    if (el.y + (el.height || 0) > maxY) maxY = el.y + (el.height || 0);
+  });
+
+  const width = maxX - minX || 100;
+  const height = maxY - minY || 100;
+  const padding = 20;
+
+  // Calculate scale to fit canvas
+  const scaleX = (200 - padding * 2) / width;
+  const scaleY = (150 - padding * 2) / height;
+  const scale = Math.min(scaleX, scaleY);
+
+  // Calculate offset to center the drawing
+  const offsetX = (200 - width * scale) / 2 - minX * scale;
+  const offsetY = (150 - height * scale) / 2 - minY * scale;
+
+  ctx.save();
+  ctx.translate(offsetX, offsetY);
+  ctx.scale(scale, scale);
+
+  // Draw rectangles and simple shapes
+  elements.forEach((el) => {
+    if (el.isDeleted) return;
+
+    ctx.fillStyle = el.backgroundColor || "transparent";
+    ctx.strokeStyle = el.strokeColor || "#000000";
+    ctx.lineWidth = el.strokeWidth || 1;
+
+    if (el.type === "rectangle") {
+      ctx.beginPath();
+      ctx.rect(el.x, el.y, el.width || 0, el.height || 0);
+      if (el.backgroundColor && el.backgroundColor !== "transparent") {
+        ctx.fill();
+      }
+      ctx.stroke();
+    } else if (el.type === "ellipse") {
+      ctx.beginPath();
+      ctx.ellipse(
+        el.x + (el.width || 0) / 2,
+        el.y + (el.height || 0) / 2,
+        (el.width || 0) / 2,
+        (el.height || 0) / 2,
+        0,
+        0,
+        Math.PI * 2,
+      );
+      if (el.backgroundColor && el.backgroundColor !== "transparent") {
+        ctx.fill();
+      }
+      ctx.stroke();
+    } else if (el.type === "line" || el.type === "arrow") {
+      ctx.beginPath();
+      if (el.points && el.points.length > 0) {
+        ctx.moveTo(el.x + el.points[0][0], el.y + el.points[0][1]);
+        for (let i = 1; i < el.points.length; i++) {
+          ctx.lineTo(el.x + el.points[i][0], el.y + el.points[i][1]);
+        }
+      }
+      ctx.stroke();
+    } else if (el.type === "text") {
+      ctx.font = `${el.fontSize || 20}px ${el.fontFamily?.split(",")[0] || "sans-serif"}`;
+      ctx.fillStyle = el.strokeColor || "#000000";
+      ctx.fillText(el.text || "", el.x, el.y + (el.fontSize || 20));
+    }
+  });
+
+  ctx.restore();
+
+  // Convert to blob and then to base64
+  const blob = await canvas.convertToBlob({ type: "image/png" });
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
 // ─── Message Handler ─────────────────────────────────────────────────────────
 // IMPORTANT: The listener must NOT be async. Return true synchronously to keep
 // the message channel open, then call sendResponse inside the async handler.
@@ -480,69 +582,157 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "GET_STATISTICS") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    chrome.storage.local.get("token").then(async ({ token }) => {
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
 
-      chrome.storage.sync
-        .get(["owner", "repo", "branch", "savePath"])
-        .then((settings) => {
-          const savePath = settings.savePath || "drawings/";
-          const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${savePath}?ref=${settings.branch || "main"}`;
-          const headers = {
-            Authorization: `Bearer ${token}`,
-            Accept: "application/vnd.github+json",
-          };
+      try {
+        const settings = await chrome.storage.sync.get([
+          "owner",
+          "repo",
+          "branch",
+          "savePath",
+        ]);
 
-          fetch(url, { headers })
-            .then((resp) => {
-              if (!resp.ok) throw new Error("Failed to fetch repository data");
-              return resp.json();
-            })
-            .then((files) => {
-              if (!Array.isArray(files)) {
-                throw new Error("Invalid repository data");
-              }
+        const savePath = (settings.savePath || "drawings/").replace(/\/$/, "");
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+        };
 
-              const excalidrawFiles = files.filter(
-                (f) => f.type === "file" && f.name.endsWith(".excalidraw"),
-              );
+        // Fetch both main folder and autosave folder in parallel
+        const [mainResp, autosaveResp] = await Promise.all([
+          fetch(
+            `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${savePath}?ref=${settings.branch || "main"}`,
+            { headers },
+          ),
+          fetch(
+            `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/_autosave?ref=${settings.branch || "main"}`,
+            { headers },
+          ),
+        ]);
 
-              const totalFiles = excalidrawFiles.length;
-              const totalSize = excalidrawFiles.reduce(
-                (sum, f) => sum + (f.size || 0),
-                0,
-              );
-              const averageSize = totalFiles > 0 ? totalSize / totalFiles : 0;
+        let allFiles = [];
 
-              // Get last modified file
-              let lastSaved = "Never";
-              if (totalFiles > 0) {
-                const sorted = [...excalidrawFiles].sort((a, b) =>
-                  b.name.localeCompare(a.name),
-                );
-                const latest = sorted[0];
-                // Try to extract date from filename
-                const dateMatch = latest.name.match(/(\d{4}-\d{2}-\d{2})/);
-                if (dateMatch) {
-                  lastSaved = new Date(dateMatch[1]).toLocaleDateString();
-                }
-              }
+        if (mainResp.ok) {
+          const mainFiles = await mainResp.json();
+          if (Array.isArray(mainFiles)) {
+            allFiles = allFiles.concat(mainFiles);
+          }
+        }
 
-              sendResponse({
-                ok: true,
-                stats: {
-                  totalFiles,
-                  totalSize,
-                  averageSize,
-                  lastSaved,
-                },
-              });
-            })
-            .catch((err) => sendResponse({ error: err.message }));
+        if (autosaveResp.ok) {
+          const autosaveFiles = await autosaveResp.json();
+          if (Array.isArray(autosaveFiles)) {
+            allFiles = allFiles.concat(autosaveFiles);
+          }
+        }
+
+        const excalidrawFiles = allFiles.filter(
+          (f) => f.type === "file" && f.name.endsWith(".excalidraw"),
+        );
+
+        const totalFiles = excalidrawFiles.length;
+        const totalSize = excalidrawFiles.reduce(
+          (sum, f) => sum + (f.size || 0),
+          0,
+        );
+        const averageSize = totalFiles > 0 ? totalSize / totalFiles : 0;
+
+        // Get last modified file across both folders
+        let lastSaved = "Never";
+        if (totalFiles > 0) {
+          const sorted = [...excalidrawFiles].sort((a, b) =>
+            b.name.localeCompare(a.name),
+          );
+          const latest = sorted[0];
+          // Try to extract date from filename
+          const dateMatch = latest.name.match(/(\d{4}-\d{2}-\d{2})/);
+          if (dateMatch) {
+            lastSaved = new Date(dateMatch[1]).toLocaleDateString();
+          }
+        }
+
+        sendResponse({
+          ok: true,
+          stats: {
+            totalFiles,
+            totalSize,
+            averageSize,
+            lastSaved,
+          },
         });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    });
+    return true;
+  }
+
+  if (msg.type === "GENERATE_THUMBNAIL") {
+    chrome.storage.local.get("token").then(async ({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      try {
+        chrome.storage.sync
+          .get(["owner", "repo", "branch"])
+          .then(async (settings) => {
+            const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${msg.path}?ref=${settings.branch || "main"}`;
+            const headers = {
+              Authorization: `Bearer ${token}`,
+              Accept: "application/vnd.github+json",
+            };
+
+            const resp = await fetch(url, { headers });
+            if (!resp.ok) {
+              throw new Error("Failed to fetch file");
+            }
+
+            const data = await resp.json();
+            const content = decodeURIComponent(
+              escape(atob(data.content.replace(/\n/g, ""))),
+            );
+            const scene = JSON.parse(content);
+
+            // Generate thumbnail
+            const thumbnail = await generateThumbnail(scene);
+
+            // Cache thumbnail in storage
+            try {
+              const { thumbnails = {} } =
+                await chrome.storage.local.get("thumbnails");
+              thumbnails[msg.path] = {
+                data: thumbnail,
+                timestamp: Date.now(),
+              };
+              await chrome.storage.local.set({ thumbnails });
+            } catch (err) {
+              console.error("Failed to cache thumbnail:", err);
+            }
+
+            sendResponse({ ok: true, thumbnail, scene });
+          });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    });
+    return true;
+  }
+
+  if (msg.type === "GET_CACHED_THUMBNAIL") {
+    chrome.storage.local.get("thumbnails").then(({ thumbnails = {} }) => {
+      const thumb = thumbnails[msg.path];
+      if (thumb && Date.now() - thumb.timestamp < 7 * 24 * 60 * 60 * 1000) {
+        // Cache valid for 7 days
+        sendResponse({ ok: true, thumbnail: thumb.data });
+      } else {
+        sendResponse({ ok: false });
+      }
     });
     return true;
   }

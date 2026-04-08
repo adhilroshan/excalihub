@@ -1,298 +1,475 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ExcaliHub</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap');
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>ExcaliHub</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap");
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
 
-    :root {
-      --bg: #0d0f11;
-      --surface: #161a1f;
-      --border: #252b33;
-      --text: #e8edf2;
-      --muted: #6b7685;
-      --accent: #4f8ef7;
-      --accent-dim: #1e3259;
-      --success: #3dd68c;
-      --success-dim: #0f3326;
-      --error: #f76f6f;
-      --error-dim: #331414;
-      --warn: #f5a623;
-    }
+            :root {
+                --bg: #0d0f11;
+                --surface: #161a1f;
+                --border: #252b33;
+                --text: #e8edf2;
+                --muted: #6b7685;
+                --accent: #4f8ef7;
+                --accent-dim: #1e3259;
+                --success: #3dd68c;
+                --success-dim: #0f3326;
+                --error: #f76f6f;
+                --error-dim: #331414;
+                --warn: #f5a623;
+            }
 
-    body {
-      width: 320px;
-      min-height: 200px;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px;
-    }
+            body.theme-light {
+                --bg: #ffffff;
+                --surface: #f5f7fa;
+                --border: #d1d5db;
+                --text: #1f2937;
+                --muted: #6b7280;
+                --accent: #4f8ef7;
+                --accent-dim: #e8f0fe;
+                --success: #10b981;
+                --success-dim: #d1fae5;
+                --error: #ef4444;
+                --error-dim: #fee2e2;
+                --warn: #f59e0b;
+            }
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 16px 12px;
-      border-bottom: 1px solid var(--border);
-    }
+            body {
+                width: 320px;
+                min-height: 200px;
+                background: var(--bg);
+                color: var(--text);
+                font-family: "DM Sans", sans-serif;
+                font-size: 13px;
+            }
 
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 600;
-      font-size: 14px;
-      letter-spacing: -0.01em;
-    }
+            header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 14px 16px 12px;
+                border-bottom: 1px solid var(--border);
+            }
 
-    .logo svg { opacity: 0.9; }
+            .logo {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-weight: 600;
+                font-size: 14px;
+                letter-spacing: -0.01em;
+            }
 
-    .header-actions { display: flex; gap: 6px; }
+            .logo svg {
+                opacity: 0.9;
+            }
 
-    .icon-btn {
-      background: none;
-      border: none;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      transition: color 0.15s, background 0.15s;
-    }
-    .icon-btn:hover { color: var(--text); background: var(--surface); }
+            .header-actions {
+                display: flex;
+                gap: 6px;
+            }
 
-    main { padding: 16px; }
+            .icon-btn {
+                background: none;
+                border: none;
+                color: var(--muted);
+                cursor: pointer;
+                padding: 4px;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                transition:
+                    color 0.15s,
+                    background 0.15s;
+            }
+            .icon-btn:hover {
+                color: var(--text);
+                background: var(--surface);
+            }
 
-    /* ── States ── */
-    .state { display: none; flex-direction: column; gap: 12px; }
-    .state.active { display: flex; }
+            main {
+                padding: 16px;
+            }
 
-    /* ── User chip ── */
-    .user-chip {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-    }
-    .user-chip img {
-      width: 22px; height: 22px;
-      border-radius: 50%;
-      border: 1px solid var(--border);
-    }
-    .user-chip .login { font-weight: 500; font-size: 12px; }
-    .user-chip .label { font-size: 11px; color: var(--muted); }
+            /* ── States ── */
+            .state {
+                display: none;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .state.active {
+                display: flex;
+            }
 
-    /* ── Filename input ── */
-    .field label {
-      display: block;
-      font-size: 11px;
-      color: var(--muted);
-      margin-bottom: 5px;
-      font-weight: 500;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-    .field input {
-      width: 100%;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 7px;
-      padding: 8px 10px;
-      font-family: 'DM Mono', monospace;
-      font-size: 12px;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    .field input:focus { border-color: var(--accent); }
+            /* ── User chip ── */
+            .user-chip {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 10px;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+            }
+            .user-chip img {
+                width: 22px;
+                height: 22px;
+                border-radius: 50%;
+                border: 1px solid var(--border);
+            }
+            .user-chip .login {
+                font-weight: 500;
+                font-size: 12px;
+            }
+            .user-chip .label {
+                font-size: 11px;
+                color: var(--muted);
+            }
 
-    /* ── Buttons ── */
-    .btn {
-      width: 100%;
-      padding: 10px 14px;
-      border-radius: 8px;
-      border: none;
-      font-family: 'DM Sans', sans-serif;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s, transform 0.1s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 7px;
-    }
-    .btn:active { transform: scale(0.98); }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover:not(:disabled) { opacity: 0.88; }
-    .btn-ghost {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+            /* ── Filename input ── */
+            .field label {
+                display: block;
+                font-size: 11px;
+                color: var(--muted);
+                margin-bottom: 5px;
+                font-weight: 500;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+            .field input {
+                width: 100%;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                color: var(--text);
+                border-radius: 7px;
+                padding: 8px 10px;
+                font-family: "DM Mono", monospace;
+                font-size: 12px;
+                outline: none;
+                transition: border-color 0.15s;
+            }
+            .field input:focus {
+                border-color: var(--accent);
+            }
 
-    /* ── Auth pending ── */
-    .code-box {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 14px;
-      text-align: center;
-    }
-    .code-box .code {
-      font-family: 'DM Mono', monospace;
-      font-size: 22px;
-      font-weight: 500;
-      letter-spacing: 0.12em;
-      color: var(--accent);
-      margin-bottom: 6px;
-    }
-    .code-box .hint { font-size: 11px; color: var(--muted); line-height: 1.5; }
+            /* ── Buttons ── */
+            .btn {
+                width: 100%;
+                padding: 10px 14px;
+                border-radius: 8px;
+                border: none;
+                font-family: "DM Sans", sans-serif;
+                font-size: 13px;
+                font-weight: 600;
+                cursor: pointer;
+                transition:
+                    opacity 0.15s,
+                    transform 0.1s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 7px;
+            }
+            .btn:active {
+                transform: scale(0.98);
+            }
+            .btn:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
+            }
+            .btn-primary {
+                background: var(--accent);
+                color: #fff;
+            }
+            .btn-primary:hover:not(:disabled) {
+                opacity: 0.88;
+            }
+            .btn-ghost {
+                background: var(--surface);
+                color: var(--text);
+                border: 1px solid var(--border);
+            }
+            .btn-ghost:hover {
+                border-color: var(--accent);
+                color: var(--accent);
+            }
 
-    /* ── Toast ── */
-    .toast {
-      padding: 9px 12px;
-      border-radius: 7px;
-      font-size: 12px;
-      line-height: 1.4;
-      display: none;
-    }
-    .toast.show { display: block; }
-    .toast.success { background: var(--success-dim); color: var(--success); border: 1px solid #1c5c3e; }
-    .toast.error   { background: var(--error-dim);   color: var(--error);   border: 1px solid #5c1c1c; }
+            /* ── Auth pending ── */
+            .code-box {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 14px;
+                text-align: center;
+            }
+            .code-box .code {
+                font-family: "DM Mono", monospace;
+                font-size: 22px;
+                font-weight: 500;
+                letter-spacing: 0.12em;
+                color: var(--accent);
+                margin-bottom: 6px;
+            }
+            .code-box .hint {
+                font-size: 11px;
+                color: var(--muted);
+                line-height: 1.5;
+            }
 
-    .toast a { color: inherit; }
+            /* ── Toast ── */
+            .toast {
+                padding: 9px 12px;
+                border-radius: 7px;
+                font-size: 12px;
+                line-height: 1.4;
+                display: none;
+            }
+            .toast.show {
+                display: block;
+            }
+            .toast.success {
+                background: var(--success-dim);
+                color: var(--success);
+                border: 1px solid #1c5c3e;
+            }
+            .toast.error {
+                background: var(--error-dim);
+                color: var(--error);
+                border: 1px solid #5c1c1c;
+            }
 
-    /* ── Spinner ── */
-    .spinner {
-      width: 14px; height: 14px;
-      border: 2px solid rgba(255,255,255,0.2);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      display: none;
-    }
-    .spinner.show { display: block; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+            .toast a {
+                color: inherit;
+            }
 
-    .row { display: flex; align-items: center; gap: 8px; }
-    .row .spinner { border-top-color: var(--accent); border-color: var(--accent-dim); }
+            /* ── Spinner ── */
+            .spinner {
+                width: 14px;
+                height: 14px;
+                border: 2px solid rgba(255, 255, 255, 0.2);
+                border-top-color: #fff;
+                border-radius: 50%;
+                animation: spin 0.7s linear infinite;
+                display: none;
+            }
+            .spinner.show {
+                display: block;
+            }
+            @keyframes spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
 
-    .not-on-excalidraw {
-      text-align: center;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.6;
-      padding: 8px 0;
-    }
-  </style>
-</head>
-<body>
+            .row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .row .spinner {
+                border-top-color: var(--accent);
+                border-color: var(--accent-dim);
+            }
 
-<header>
-  <div class="logo">
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <rect width="18" height="18" rx="5" fill="#4f8ef7" opacity="0.15"/>
-      <path d="M4 13L7.5 6L10 10.5L12 8L14 13" stroke="#4f8ef7" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-    ExcaliHub
-  </div>
-  <div class="header-actions">
-    <button class="icon-btn" id="btn-settings" title="Settings">
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-        <path d="M7.5 9.5a2 2 0 100-4 2 2 0 000 4z" stroke="currentColor" stroke-width="1.3"/>
-        <path d="M12.2 7.5c0-.2 0-.4-.1-.6l1.3-1-.9-1.6-1.5.5a4.5 4.5 0 00-1-.6L9.8 2.7H8.2l-.2 1.5a4.5 4.5 0 00-1 .6L5.5 4.3l-.9 1.6 1.3 1a4 4 0 000 1.2l-1.3 1 .9 1.6 1.5-.5c.3.2.6.4 1 .6l.2 1.5h1.6l.2-1.5c.4-.2.7-.4 1-.6l1.5.5.9-1.6-1.3-1c.1-.2.1-.4.1-.7z" stroke="currentColor" stroke-width="1.3"/>
-      </svg>
-    </button>
-  </div>
-</header>
+            .not-on-excalidraw {
+                text-align: center;
+                color: var(--muted);
+                font-size: 12px;
+                line-height: 1.6;
+                padding: 8px 0;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div class="logo">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <rect
+                        width="18"
+                        height="18"
+                        rx="5"
+                        fill="#4f8ef7"
+                        opacity="0.15"
+                    />
+                    <path
+                        d="M4 13L7.5 6L10 10.5L12 8L14 13"
+                        stroke="#4f8ef7"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                </svg>
+                ExcaliHub
+            </div>
+            <div class="header-actions">
+                <button
+                    class="icon-btn"
+                    id="btn-theme-toggle"
+                    title="Toggle theme"
+                >
+                    <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        class="theme-icon-light"
+                    >
+                        <circle
+                            cx="7"
+                            cy="7"
+                            r="3"
+                            stroke="currentColor"
+                            stroke-width="1.3"
+                        />
+                        <path
+                            d="M7 1v2M7 11v2M1 7h2M11 7h2M2.8 2.8l1.4 1.4M9.8 9.8l1.4 1.4M2.8 11.2l1.4-1.4M9.8 4.2l1.4-1.4"
+                            stroke="currentColor"
+                            stroke-width="1.3"
+                            stroke-linecap="round"
+                        />
+                    </svg>
+                    <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        class="theme-icon-dark"
+                        style="display: none"
+                    >
+                        <path
+                            d="M12 8.5A5.5 5.5 0 015.5 2 5.5 5.5 0 1012 8.5z"
+                            stroke="currentColor"
+                            stroke-width="1.3"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                </button>
+                <button class="icon-btn" id="btn-settings" title="Settings">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                        <path
+                            d="M7.5 9.5a2 2 0 100-4 2 2 0 000 4z"
+                            stroke="currentColor"
+                            stroke-width="1.3"
+                        />
+                        <path
+                            d="M12.2 7.5c0-.2 0-.4-.1-.6l1.3-1-.9-1.6-1.5.5a4.5 4.5 0 00-1-.6L9.8 2.7H8.2l-.2 1.5a4.5 4.5 0 00-1 .6L5.5 4.3l-.9 1.6 1.3 1a4 4 0 000 1.2l-1.3 1 .9 1.6 1.5-.5c.3.2.6.4 1 .6l.2 1.5h1.6l.2-1.5c.4-.2.7-.4 1-.6l1.5.5.9-1.6-1.3-1c.1-.2.1-.4.1-.7z"
+                            stroke="currentColor"
+                            stroke-width="1.3"
+                        />
+                    </svg>
+                </button>
+            </div>
+        </header>
 
-<main>
+        <main>
+            <!-- STATE: not configured -->
+            <div class="state active" id="state-not-configured">
+                <div class="not-on-excalidraw">
+                    ⚙️ Configure your GitHub repo<br />before using ExcaliHub.
+                </div>
+                <button class="btn btn-primary" id="btn-open-settings">
+                    Open Settings
+                </button>
+            </div>
 
-  <!-- STATE: not configured -->
-  <div class="state active" id="state-not-configured">
-    <div class="not-on-excalidraw">
-      ⚙️ Configure your GitHub repo<br>before using ExcaliHub.
-    </div>
-    <button class="btn btn-primary" id="btn-open-settings">Open Settings</button>
-  </div>
+            <!-- STATE: configured, not authed -->
+            <div class="state" id="state-not-authed">
+                <div class="not-on-excalidraw">
+                    Connect your GitHub account<br />to start saving drawings.
+                </div>
+                <button class="btn btn-primary" id="btn-connect">
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                        <path
+                            d="M7.5 1a6.5 6.5 0 100 13A6.5 6.5 0 007.5 1zm0 1.2a5.3 5.3 0 110 10.6A5.3 5.3 0 017.5 2.2zM5.5 5.5C5.5 4.4 6.4 3.5 7.5 3.5S9.5 4.4 9.5 5.5c0 .8-.5 1.5-1.2 1.8v.7a.8.8 0 01-1.6 0v-1a.8.8 0 01.8-.8c.2 0 .4-.2.4-.5 0-.2-.2-.4-.4-.4s-.4.2-.4.4a.8.8 0 01-1.6-.2zM7.5 10.5a.8.8 0 110-1.6.8.8 0 010 1.6z"
+                            fill="currentColor"
+                        />
+                    </svg>
+                    Connect GitHub
+                </button>
+            </div>
 
-  <!-- STATE: configured, not authed -->
-  <div class="state" id="state-not-authed">
-    <div class="not-on-excalidraw">
-      Connect your GitHub account<br>to start saving drawings.
-    </div>
-    <button class="btn btn-primary" id="btn-connect">
-      <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-        <path d="M7.5 1a6.5 6.5 0 100 13A6.5 6.5 0 007.5 1zm0 1.2a5.3 5.3 0 110 10.6A5.3 5.3 0 017.5 2.2zM5.5 5.5C5.5 4.4 6.4 3.5 7.5 3.5S9.5 4.4 9.5 5.5c0 .8-.5 1.5-1.2 1.8v.7a.8.8 0 01-1.6 0v-1a.8.8 0 01.8-.8c.2 0 .4-.2.4-.5 0-.2-.2-.4-.4-.4s-.4.2-.4.4a.8.8 0 01-1.6-.2zM7.5 10.5a.8.8 0 110-1.6.8.8 0 010 1.6z" fill="currentColor"/>
-      </svg>
-      Connect GitHub
-    </button>
-  </div>
+            <!-- STATE: auth pending (device flow in progress) -->
+            <div class="state" id="state-auth-pending">
+                <div class="code-box">
+                    <div class="code" id="user-code">—</div>
+                    <div class="hint">
+                        Enter this code at
+                        <strong>github.com/login/device</strong><br />(tab
+                        opened for you)
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="spinner show" style="display: block"></div>
+                    <span style="font-size: 12px; color: var(--muted)"
+                        >Waiting for authorization…</span
+                    >
+                </div>
+            </div>
 
-  <!-- STATE: auth pending (device flow in progress) -->
-  <div class="state" id="state-auth-pending">
-    <div class="code-box">
-      <div class="code" id="user-code">—</div>
-      <div class="hint">Enter this code at <strong>github.com/login/device</strong><br>(tab opened for you)</div>
-    </div>
-    <div class="row">
-      <div class="spinner show" style="display:block"></div>
-      <span style="font-size:12px;color:var(--muted)">Waiting for authorization…</span>
-    </div>
-  </div>
+            <!-- STATE: authed but not on excalidraw.com -->
+            <div class="state" id="state-not-on-excalidraw">
+                <div class="user-chip">
+                    <img id="user-avatar-1" src="" alt="" />
+                    <div>
+                        <div class="login" id="user-login-1"></div>
+                        <div class="label">Connected</div>
+                    </div>
+                </div>
+                <div class="not-on-excalidraw">
+                    Navigate to <strong>excalidraw.com</strong><br />to save a
+                    drawing.
+                </div>
+                <button class="btn btn-ghost" id="btn-open-excalidraw">
+                    Open Excalidraw ↗
+                </button>
+            </div>
 
-  <!-- STATE: authed but not on excalidraw.com -->
-  <div class="state" id="state-not-on-excalidraw">
-    <div class="user-chip">
-      <img id="user-avatar-1" src="" alt="" />
-      <div>
-        <div class="login" id="user-login-1"></div>
-        <div class="label">Connected</div>
-      </div>
-    </div>
-    <div class="not-on-excalidraw">
-      Navigate to <strong>excalidraw.com</strong><br>to save a drawing.
-    </div>
-    <button class="btn btn-ghost" id="btn-open-excalidraw">Open Excalidraw ↗</button>
-  </div>
+            <!-- STATE: ready to save -->
+            <div class="state" id="state-ready">
+                <div class="user-chip">
+                    <img id="user-avatar-2" src="" alt="" />
+                    <div>
+                        <div class="login" id="user-login-2"></div>
+                        <div class="label" id="save-path-label"></div>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Filename</label>
+                    <input
+                        type="text"
+                        id="filename-input"
+                        placeholder="untitled_2025-04-08.excalidraw"
+                    />
+                </div>
+                <button class="btn btn-primary" id="btn-save">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path
+                            d="M2 10.5v1.5h10V10.5M7 2v7M4.5 6.5L7 9l2.5-2.5"
+                            stroke="currentColor"
+                            stroke-width="1.5"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                        />
+                    </svg>
+                    Save to GitHub
+                </button>
+                <div class="toast" id="toast"></div>
+            </div>
 
-  <!-- STATE: ready to save -->
-  <div class="state" id="state-ready">
-    <div class="user-chip">
-      <img id="user-avatar-2" src="" alt="" />
-      <div>
-        <div class="login" id="user-login-2"></div>
-        <div class="label" id="save-path-label"></div>
-      </div>
-    </div>
-    <div class="field">
-      <label>Filename</label>
-      <input type="text" id="filename-input" placeholder="untitled_2025-04-08.excalidraw" />
-    </div>
-    <button class="btn btn-primary" id="btn-save">
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-        <path d="M2 10.5v1.5h10V10.5M7 2v7M4.5 6.5L7 9l2.5-2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      Save to GitHub
-    </button>
-    <div class="toast" id="toast"></div>
-  </div>
-
-  <!-- STATE: saving spinner overlay inside ready state (reuse btn) -->
-
-</main>
-<script src="popup.js"></script>
-</body>
+            <!-- STATE: saving spinner overlay inside ready state (reuse btn) -->
+        </main>
+        <script src="popup.js"></script>
+    </body>
 </html>

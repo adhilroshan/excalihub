@@ -140,6 +140,44 @@ document.getElementById("btn-signout").addEventListener("click", async () => {
 loadSettings();
 loadAuth();
 loadStatistics();
+loadTheme();
+
+// ─── Theme Toggle ────────────────────────────────────────────────────────────
+
+async function loadTheme() {
+  try {
+    const { theme } = await chrome.storage.local.get("theme");
+    applyTheme(theme || "dark");
+  } catch (err) {
+    applyTheme("dark");
+  }
+}
+
+function applyTheme(theme) {
+  if (theme === "light") {
+    document.body.classList.add("theme-light");
+    const iconLight = document.querySelector(".theme-icon-light");
+    const iconDark = document.querySelector(".theme-icon-dark");
+    if (iconLight) iconLight.style.display = "none";
+    if (iconDark) iconDark.style.display = "block";
+  } else {
+    document.body.classList.remove("theme-light");
+    const iconLight = document.querySelector(".theme-icon-light");
+    const iconDark = document.querySelector(".theme-icon-dark");
+    if (iconLight) iconLight.style.display = "block";
+    if (iconDark) iconDark.style.display = "none";
+  }
+}
+
+document
+  .getElementById("btn-theme-toggle")
+  ?.addEventListener("click", async () => {
+    const currentTheme =
+      (await chrome.storage.local.get("theme")).theme || "dark";
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    await chrome.storage.local.set({ theme: newTheme });
+    applyTheme(newTheme);
+  });
 
 // Load statistics
 async function loadStatistics() {

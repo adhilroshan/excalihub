@@ -61,7 +61,7 @@ function injectSidebar() {
   const sidebar = document.createElement("div");
   sidebar.id = "excalihub-sidebar";
   sidebar.innerHTML = `
-    <div class="sidebar-header">
+      <div class="sidebar-header">
       <div class="sidebar-logo">
         <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
           <rect width="18" height="18" rx="5" fill="#4f8ef7" opacity="0.15"/>
@@ -69,11 +69,22 @@ function injectSidebar() {
         </svg>
         <span>ExcaliHub</span>
       </div>
-      <button class="sidebar-close" id="excalihub-close" title="Close sidebar">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </button>
+      <div style="display: flex; gap: 6px; align-items: center;">
+        <button class="sidebar-theme-toggle" id="excalihub-theme-toggle" title="Toggle theme">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="theme-icon-light">
+            <circle cx="7" cy="7" r="3" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M7 1v2M7 11v2M1 7h2M11 7h2M2.8 2.8l1.4 1.4M9.8 9.8l1.4 1.4M2.8 11.2l1.4-1.4M9.8 4.2l1.4-1.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="theme-icon-dark" style="display: none;">
+            <path d="M12 8.5A5.5 5.5 0 015.5 2 5.5 5.5 0 1012 8.5z" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="sidebar-close" id="excalihub-close" title="Close sidebar">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <div class="sidebar-content" id="excalihub-content">
@@ -232,21 +243,54 @@ function injectSidebar() {
   const style = document.createElement("style");
   style.id = "excalihub-styles";
   style.textContent = `
+    /* Theme Variables */
+    #excalihub-sidebar {
+      --bg: #0d0f11;
+      --surface: #161a1f;
+      --surface-hover: #1e3259;
+      --border: #252b33;
+      --text: #e8edf2;
+      --muted: #6b7685;
+      --accent: #4f8ef7;
+      --accent-dim: #1e3259;
+      --success: #3dd68c;
+      --success-dim: #0f3326;
+      --error: #f76f6f;
+      --error-dim: #331414;
+      --shadow: rgba(0, 0, 0, 0.3);
+    }
+
+    #excalihub-sidebar.theme-light {
+      --bg: #ffffff;
+      --surface: #f5f7fa;
+      --surface-hover: #e8f0fe;
+      --border: #d1d5db;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --accent: #4f8ef7;
+      --accent-dim: #e8f0fe;
+      --success: #10b981;
+      --success-dim: #d1fae5;
+      --error: #ef4444;
+      --error-dim: #fee2e2;
+      --shadow: rgba(0, 0, 0, 0.1);
+    }
+
     #excalihub-sidebar {
       position: fixed;
       top: 0;
       right: 0;
       width: 280px;
       height: 100vh;
-      background: #161a1f;
-      border-left: 1px solid #252b33;
-      color: #e8edf2;
+      background: var(--bg);
+      border-left: 1px solid var(--border);
+      color: var(--text);
       font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 13px;
       z-index: 999999;
       display: flex;
       flex-direction: column;
-      box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+      box-shadow: -4px 0 20px var(--shadow);
     }
 
     #excalihub-sidebar.hidden {
@@ -258,7 +302,7 @@ function injectSidebar() {
       align-items: center;
       justify-content: space-between;
       padding: 12px 14px;
-      border-bottom: 1px solid #252b33;
+      border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
 
@@ -273,7 +317,7 @@ function injectSidebar() {
     .sidebar-close {
       background: none;
       border: none;
-      color: #6b7685;
+      color: var(--muted);
       cursor: pointer;
       padding: 4px;
       border-radius: 6px;
@@ -283,8 +327,25 @@ function injectSidebar() {
     }
 
     .sidebar-close:hover {
-      color: #e8edf2;
-      background: #0d0f11;
+      color: var(--text);
+      background: var(--surface);
+    }
+
+    .sidebar-theme-toggle {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 4px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      transition: color 0.15s, background 0.15s;
+    }
+
+    .sidebar-theme-toggle:hover {
+      color: var(--text);
+      background: var(--surface);
     }
 
     .sidebar-content {
@@ -305,14 +366,14 @@ function injectSidebar() {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-      color: #6b7685;
+      color: var(--muted);
       margin-bottom: 8px;
     }
 
     .new-drawing-btn {
-      background: #161a1f;
-      border: 1px solid #252b33;
-      color: #e8edf2;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
       cursor: pointer;
       padding: 4px;
       border-radius: 4px;
@@ -322,15 +383,15 @@ function injectSidebar() {
     }
 
     .new-drawing-btn:hover {
-      background: #252b33;
-      color: #4f8ef7;
-      border-color: #4f8ef7;
+      background: var(--border);
+      color: var(--accent);
+      border-color: var(--accent);
     }
 
     .refresh-btn {
       background: none;
       border: none;
-      color: #6b7685;
+      color: var(--muted);
       cursor: pointer;
       padding: 4px;
       border-radius: 4px;
@@ -340,7 +401,7 @@ function injectSidebar() {
     }
 
     .refresh-btn:hover {
-      color: #4f8ef7;
+      color: var(--accent);
     }
 
     .refresh-btn.spinning svg {
@@ -350,7 +411,7 @@ function injectSidebar() {
     .import-btn {
       background: none;
       border: none;
-      color: #6b7685;
+      color: var(--muted);
       cursor: pointer;
       padding: 4px;
       border-radius: 4px;
@@ -360,7 +421,7 @@ function injectSidebar() {
     }
 
     .import-btn:hover {
-      color: #3dd68c;
+      color: var(--success);
     }
 
     @keyframes spin {
@@ -375,7 +436,7 @@ function injectSidebar() {
 
     .file-list-empty {
       text-align: center;
-      color: #6b7685;
+      color: var(--muted);
       font-size: 12px;
       padding: 20px 10px;
       line-height: 1.5;
@@ -386,8 +447,8 @@ function injectSidebar() {
       align-items: center;
       gap: 8px;
       padding: 8px 10px;
-      background: #0d0f11;
-      border: 1px solid #252b33;
+      background: var(--bg);
+      border: 1px solid var(--border);
       border-radius: 6px;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
@@ -395,8 +456,8 @@ function injectSidebar() {
     }
 
     .file-item:hover {
-      border-color: #4f8ef7;
-      background: #1e3259;
+      border-color: var(--accent);
+      background: var(--surface-hover);
     }
 
     .file-item.loading {
@@ -406,7 +467,7 @@ function injectSidebar() {
 
     .file-item .file-icon {
       flex-shrink: 0;
-      color: #4f8ef7;
+      color: var(--accent);
     }
 
     .file-item .file-info {
@@ -959,6 +1020,45 @@ function injectSidebar() {
     floatingBtn.classList.add("hidden");
   });
 
+  // Theme toggle
+  const themeToggleBtn = document.getElementById("excalihub-theme-toggle");
+  const themeIconLight = themeToggleBtn?.querySelector(".theme-icon-light");
+  const themeIconDark = themeToggleBtn?.querySelector(".theme-icon-dark");
+
+  async function applyTheme(theme) {
+    if (theme === "light") {
+      sidebarEl.classList.add("theme-light");
+      if (themeIconLight) themeIconLight.style.display = "none";
+      if (themeIconDark) themeIconDark.style.display = "block";
+    } else {
+      sidebarEl.classList.remove("theme-light");
+      if (themeIconLight) themeIconLight.style.display = "block";
+      if (themeIconDark) themeIconDark.style.display = "none";
+    }
+  }
+
+  async function getTheme() {
+    try {
+      const { theme } = await chrome.storage.local.get("theme");
+      return theme || "dark";
+    } catch {
+      return "dark";
+    }
+  }
+
+  // Load and apply theme
+  getTheme().then(applyTheme);
+
+  // Theme toggle button click
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", async () => {
+      const currentTheme = await getTheme();
+      const newTheme = currentTheme === "dark" ? "light" : "dark";
+      await chrome.storage.local.set({ theme: newTheme });
+      applyTheme(newTheme);
+    });
+  }
+
   // Show toast notification
   function showToast(msg, type = "success") {
     const existing = document.querySelector(".toast-notification");
@@ -1048,6 +1148,86 @@ function injectSidebar() {
     return files.filter((file) => file.name.toLowerCase().includes(term));
   }
 
+  // Load thumbnail for a file item
+  async function loadThumbnailForFile(file, item) {
+    const thumbnailContainer = item.querySelector(".file-thumbnail");
+    const img = thumbnailContainer?.querySelector("img");
+    const placeholder = thumbnailContainer?.querySelector(
+      ".thumbnail-placeholder",
+    );
+
+    if (!img || !placeholder) return;
+
+    // Try to get cached thumbnail
+    try {
+      const cached = await chrome.runtime.sendMessage({
+        type: "GET_CACHED_THUMBNAIL",
+        path: file.path,
+      });
+
+      if (cached?.ok && cached.thumbnail) {
+        img.src = cached.thumbnail;
+        img.style.display = "block";
+        placeholder.style.display = "none";
+        return;
+      }
+    } catch (err) {
+      // Continue to generate
+    }
+
+    // Generate thumbnail
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: "GENERATE_THUMBNAIL",
+        path: file.path,
+      });
+
+      if (result?.ok && result.thumbnail) {
+        img.src = result.thumbnail;
+        img.style.display = "block";
+        placeholder.style.display = "none";
+      }
+    } catch (err) {
+      console.error("Failed to generate thumbnail:", err);
+    }
+  }
+
+  // Load thumbnail for preview modal
+  async function loadThumbnailForPreview(file, img, placeholder) {
+    // Try to get cached thumbnail
+    try {
+      const cached = await chrome.runtime.sendMessage({
+        type: "GET_CACHED_THUMBNAIL",
+        path: file.path,
+      });
+
+      if (cached?.ok && cached.thumbnail) {
+        img.src = cached.thumbnail;
+        img.style.display = "block";
+        placeholder.style.display = "none";
+        return;
+      }
+    } catch (err) {
+      // Continue to generate
+    }
+
+    // Generate thumbnail
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: "GENERATE_THUMBNAIL",
+        path: file.path,
+      });
+
+      if (result?.ok && result.thumbnail) {
+        img.src = result.thumbnail;
+        img.style.display = "block";
+        placeholder.style.display = "none";
+      }
+    } catch (err) {
+      console.error("Failed to generate thumbnail:", err);
+    }
+  }
+
   // Render files with current search and sort applied
   function renderFiles() {
     const searchTerm = searchInput.value;
@@ -1081,13 +1261,14 @@ function injectSidebar() {
 
       item.innerHTML = `
         ${checkboxHtml}
-        <div class="file-icon">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+        <div class="file-thumbnail" style="width: 50px; height: 38px; border-radius: 4px; overflow: hidden; flex-shrink: 0; background: var(--surface); display: flex; align-items: center; justify-content: center;">
+          <img src="" alt="" style="width: 100%; height: 100%; object-fit: cover; display: none;" />
+          <svg width="20" height="20" viewBox="0 0 14 14" fill="none" class="thumbnail-placeholder" style="color: var(--muted);">
             <path d="M2 1.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/>
             <path d="M8 1.5v4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
-        <div class="file-info">
+        <div class="file-info" style="flex: 1; min-width: 0;">
           <div class="file-name">${file.name}</div>
           <div class="file-meta">${formatSize(file.size)}</div>
         </div>
@@ -1106,6 +1287,9 @@ function injectSidebar() {
           </button>
         </div>
       `;
+
+      // Load thumbnail
+      loadThumbnailForFile(file, item);
 
       item.addEventListener("click", (e) => {
         if (e.target.closest(".file-action-btn")) return;
@@ -1535,6 +1719,24 @@ function injectSidebar() {
           </button>
         </div>
         <div class="preview-content">
+          <div class="preview-thumbnail" style="
+            width: 100%;
+            height: 180px;
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          ">
+            <img src="" alt="" style="width: 100%; height: 100%; object-fit: contain; display: none;" />
+            <svg width="40" height="40" viewBox="0 0 14 14" fill="none" class="thumbnail-placeholder" style="color: var(--muted);">
+              <path d="M2 1.5h6l4 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1v-9a1 1 0 011-1z" stroke="currentColor" stroke-width="1.2"/>
+              <path d="M8 1.5v4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
           <div class="preview-info">
             <div class="info-row">
               <span class="info-label">File Name</span>
@@ -1579,6 +1781,17 @@ function injectSidebar() {
     `;
 
     document.body.appendChild(overlay);
+
+    // Load thumbnail for preview
+    const thumbnailContainer = overlay.querySelector(".preview-thumbnail");
+    const img = thumbnailContainer?.querySelector("img");
+    const placeholder = thumbnailContainer?.querySelector(
+      ".thumbnail-placeholder",
+    );
+
+    if (img && placeholder) {
+      loadThumbnailForPreview(file, img, placeholder);
+    }
 
     // Event listeners
     overlay
