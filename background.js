@@ -119,6 +119,56 @@ async function saveToGitHub({
   return resp.json();
 }
 
+// ─── GitHub List Files ────────────────────────────────────────────────────────
+
+async function listFilesFromGitHub({ token, owner, repo, branch, path }) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+  };
+
+  const resp = await fetch(url, { headers });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub API error: ${resp.status}`);
+  }
+
+  const items = await resp.json();
+  // Filter to only .excalidraw files
+  return items
+    .filter((item) => item.type === "file" && item.name.endsWith(".excalidraw"))
+    .map((item) => ({
+      name: item.name,
+      path: item.path,
+      sha: item.sha,
+      url: item.html_url,
+      size: item.size,
+    }));
+}
+
+// ─── GitHub Load File ─────────────────────────────────────────────────────────
+
+async function loadFileFromGitHub({ token, owner, repo, path, branch }) {
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+  };
+
+  const resp = await fetch(url, { headers });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.message || `GitHub API error: ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  const content = decodeURIComponent(
+    escape(atob(data.content.replace(/\n/g, ""))),
+  );
+  return JSON.parse(content);
+}
+
 // ─── Message Handler ─────────────────────────────────────────────────────────
 // IMPORTANT: The listener must NOT be async. Return true synchronously to keep
 // the message channel open, then call sendResponse inside the async handler.
@@ -188,6 +238,52 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }),
         )
         .catch((err) => sendResponse({ error: err.message }));
+    });
+    return true;
+  }
+
+  if (msg.type === "LIST_FILES") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      chrome.storage.sync
+        .get(["owner", "repo", "branch", "savePath"])
+        .then((settings) => {
+          listFilesFromGitHub({
+            token,
+            owner: settings.owner,
+            repo: settings.repo,
+            branch: settings.branch || "main",
+            path: settings.savePath || "drawings/",
+          })
+            .then((files) => sendResponse({ ok: true, files }))
+            .catch((err) => sendResponse({ error: err.message }));
+        });
+    });
+    return true;
+  }
+
+  if (msg.type === "LOAD_FILE") {
+    chrome.storage.local.get("token").then(({ token }) => {
+      if (!token) {
+        sendResponse({ error: "Not authenticated" });
+        return;
+      }
+
+      chrome.storage.sync.get(["owner", "repo", "branch"]).then((settings) => {
+        loadFileFromGitHub({
+          token,
+          owner: settings.owner,
+          repo: settings.repo,
+          path: msg.path,
+          branch: settings.branch || "main",
+        })
+          .then((scene) => sendResponse({ ok: true, scene }))
+          .catch((err) => sendResponse({ error: err.message }));
+      });
     });
     return true;
   }

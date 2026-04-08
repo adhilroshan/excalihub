@@ -6,6 +6,7 @@ A Chrome extension that saves your [Excalidraw](https://excalidraw.com) drawings
 
 - 🎨 **Seamless Integration** - Works directly with Excalidraw in your browser
 - 💾 **One-Click Save** - Save drawings to your GitHub repository with a single click
+- 📂 **Saved Files Sidebar** - Browse and load your saved drawings directly from Excalidraw
 - 🔐 **Secure Authentication** - Uses GitHub Device Flow (no passwords stored)
 - 📁 **Organized Storage** - Automatically organizes drawings by date and filename
 - ⚙️ **Customizable** - Configure your repository, branch, and save path
@@ -73,37 +74,61 @@ Visit the Chrome Web Store and click "Add to Chrome".
 
 ## Usage
 
+### Saving a Drawing
+
 1. Open [Excalidraw](https://excalidraw.com) and create your drawing
 2. Click the ExcaliHub extension icon
 3. (Optional) Edit the filename
 4. Click **Save to GitHub**
 5. Your drawing is saved as an `.excalidraw` file to your configured repository
 
+### Browsing & Loading Saved Files
+
+When you visit Excalidraw, the **ExcaliHub sidebar** automatically appears on the right side:
+
+1. The sidebar lists all `.excalidraw` files from your configured GitHub repository
+2. Click the **refresh button** to reload the file list
+3. Click any file to **load it into your canvas** (replaces the current scene)
+4. Use the **close button (X)** to hide the sidebar
+5. Click the **floating ExcaliHub button** (bottom-right corner) to reopen it
+
 ## Architecture
 
 ```
 ┌─────────────────┐
-│   popup.js      │  ← Extension popup UI
+│   popup.js      │  ← Extension popup UI (save drawings)
 │   popup.html    │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│  background.js  │  ← Service worker: Auth & GitHub API
+│  background.js  │  ← Service worker: Auth, GitHub API, file list/load
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│  content.js     │  ← Injected into excalidraw.com
+│  content.js     │  ← Injected sidebar: file browser + scene loader
 └─────────────────┘
 ```
 
 ### Components
 
-- **background.js**: Handles OAuth Device Flow, token storage, and GitHub API calls
-- **content.js**: Extracts scene data from Excalidraw's localStorage
-- **popup.js/popup.html**: Main extension popup interface
+- **background.js**: Handles OAuth Device Flow, token storage, GitHub API calls (save, list, load)
+- **content.js**: Extracts scene data and injects the sidebar into excalidraw.com
+- **popup.js/popup.html**: Main extension popup interface for saving drawings
 - **options.js/options.html**: Settings page for configuration
+
+### Message Types
+
+| Message | Direction | Description |
+|---------|-----------|-------------|
+| `GET_SCENE` | popup → content | Extract current Excalidraw scene |
+| `SAVE_SCENE` | popup → background | Save scene to GitHub |
+| `LIST_FILES` | content → background | List all `.excalidraw` files from repo |
+| `LOAD_FILE` | content → background | Load a specific file's content |
+| `START_AUTH` | popup/options → background | Start GitHub Device Flow |
+| `GET_AUTH_STATUS` | popup/options → background | Check authentication status |
+| `SIGN_OUT` | options → background | Clear stored token |
 
 ## Security
 
