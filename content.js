@@ -1813,6 +1813,8 @@ function injectSidebar() {
             if (portMsg.type === "chunk") {
               accumulatedContent = portMsg.fullContent;
               updateStreamingMessage(portMsg.fullContent);
+            } else if (portMsg.type === "tool_call") {
+              renderToolCallIndicator(portMsg.tool, portMsg.result, messagesEl);
             } else if (portMsg.type === "done") {
               accumulatedContent = portMsg.fullContent;
               resolve({ content: portMsg.fullContent });
@@ -1914,6 +1916,57 @@ function injectSidebar() {
         .replace(/\n/g, "<br>");
       el.innerHTML = "<p>" + html + "</p>";
       return el;
+    }
+
+    // ── Tool call indicator ──
+    function renderToolCallIndicator(toolName, result, container) {
+      const row = document.createElement("div");
+      row.className = "eai-msg-row";
+      row.style.cssText =
+        "align-self:flex-start;max-width:90%;margin-bottom:12px;animation:eai-fadein 0.2s ease;";
+
+      const TOOL_ICONS = {
+        canvas_read: "📖",
+        canvas_apply: "🎨",
+        canvas_delete: "🗑",
+        canvas_modify: "✏️",
+      };
+
+      const card = document.createElement("div");
+      card.style.cssText =
+        "background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px;display:flex;align-items:center;gap:8px;font-size:11px;";
+
+      const icon = document.createElement("span");
+      icon.style.cssText = "font-size:13px;flex-shrink:0;";
+      icon.textContent = TOOL_ICONS[toolName] || "🛠";
+
+      const info = document.createElement("span");
+      info.style.cssText = "color:var(--muted);line-height:1.4;flex:1;";
+      info.textContent = formatToolSummary(toolName, result);
+
+      card.appendChild(icon);
+      card.appendChild(info);
+      row.appendChild(card);
+      container.appendChild(row);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function formatToolSummary(toolName, result) {
+      if (!result || !result.success) {
+        return `${toolName} — failed: ${result?.error || "unknown error"}`;
+      }
+      switch (toolName) {
+        case "canvas_read":
+          return `Read ${result.count} element${result.count !== 1 ? "s" : ""}`;
+        case "canvas_apply":
+          return `Applied ${result.count} element${result.count !== 1 ? "s" : ""} to canvas`;
+        case "canvas_delete":
+          return `Deleted ${result.removed} element${result.removed !== 1 ? "s" : ""}`;
+        case "canvas_modify":
+          return `Modified element ${result.element?.id?.slice(0, 8) || "unknown"}`;
+        default:
+          return toolName;
+      }
     }
 
     // ── Message rendering helpers ──
@@ -2298,6 +2351,8 @@ function injectSidebar() {
         streamPort.onMessage.addListener((portMsg) => {
           if (portMsg.type === "chunk") {
             updateStreamingMessage(portMsg.fullContent);
+          } else if (portMsg.type === "tool_call") {
+            renderToolCallIndicator(portMsg.tool, portMsg.result, messagesEl);
           } else if (portMsg.type === "done") {
             resolve({ content: portMsg.fullContent });
           } else if (portMsg.type === "error") {
@@ -3682,6 +3737,8 @@ async function injectAIChat() {
       streamPort.onMessage.addListener((portMsg) => {
         if (portMsg.type === "chunk") {
           updateFloatingStreamingMessage(portMsg.fullContent);
+        } else if (portMsg.type === "tool_call") {
+          renderFloatingToolCallIndicator(portMsg.tool, portMsg.result);
         } else if (portMsg.type === "done") {
           resolve({ content: portMsg.fullContent });
         } else if (portMsg.type === "error") {
@@ -3880,6 +3937,56 @@ async function injectAIChat() {
     return card;
   }
 
+  // ── Floating panel tool call indicator ──
+  function renderFloatingToolCallIndicator(toolName, result) {
+    const TOOL_ICONS = {
+      canvas_read: "📖",
+      canvas_apply: "🎨",
+      canvas_delete: "🗑",
+      canvas_modify: "✏️",
+    };
+
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText =
+      "align-self:flex-start;max-width:90%;margin-bottom:12px;";
+
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background:var(--bg,#0d0f11);border:1px solid var(--border,#252b33);border-radius:8px;padding:7px 10px;display:flex;align-items:center;gap:8px;font-size:12px;";
+
+    const icon = document.createElement("span");
+    icon.style.cssText = "font-size:14px;flex-shrink:0;";
+    icon.textContent = TOOL_ICONS[toolName] || "🛠";
+
+    const info = document.createElement("span");
+    info.style.cssText = "color:var(--muted,#6b7685);line-height:1.4;flex:1;";
+    info.textContent = formatFloatingToolSummary(toolName, result);
+
+    card.appendChild(icon);
+    card.appendChild(info);
+    wrapper.appendChild(card);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function formatFloatingToolSummary(toolName, result) {
+    if (!result || !result.success) {
+      return `${toolName} — failed: ${result?.error || "unknown error"}`;
+    }
+    switch (toolName) {
+      case "canvas_read":
+        return `Read ${result.count} element${result.count !== 1 ? "s" : ""}`;
+      case "canvas_apply":
+        return `Applied ${result.count} element${result.count !== 1 ? "s" : ""} to canvas`;
+      case "canvas_delete":
+        return `Deleted ${result.removed} element${result.removed !== 1 ? "s" : ""}`;
+      case "canvas_modify":
+        return `Modified element ${result.element?.id?.slice(0, 8) || "unknown"}`;
+      default:
+        return toolName;
+    }
+  }
+
   function renderFloatingMarkdown(text) {
     const el = document.createElement("div");
     el.style.cssText =
@@ -4014,6 +4121,104 @@ async function injectAIChat() {
     contextToggle.style.color = aiChatState.contextIncluded
       ? "#4ade80"
       : "var(--muted, #6b7685)";
+  }
+}
+
+// ─── AI Tool Execution Handler (global — receives tool calls from background) ─
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "AI_EXECUTE_TOOL") {
+    (async () => {
+      try {
+        const result = await handleAITool(msg.tool, msg.params);
+        sendResponse(result);
+      } catch (err) {
+        sendResponse({ success: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+});
+
+async function handleAITool(tool, params) {
+  switch (tool) {
+    case "canvas_read": {
+      const scene = getExcalidrawScene();
+      if (scene.error) return { success: false, error: scene.error };
+      // Return a compact summary
+      const elements = scene.scene.elements
+        .filter((e) => !e.isDeleted)
+        .map((e) => ({
+          id: e.id,
+          type: e.type,
+          x: Math.round(e.x),
+          y: Math.round(e.y),
+          width: Math.round(e.width || 0),
+          height: Math.round(e.height || 0),
+          text: e.text ? e.text.slice(0, 80) : undefined,
+          strokeColor: e.strokeColor,
+          backgroundColor: e.backgroundColor,
+        }));
+      return { success: true, elements, count: elements.length };
+    }
+    case "canvas_apply": {
+      if (!params.elements || !Array.isArray(params.elements)) {
+        return { success: false, error: "Missing elements array" };
+      }
+      const result = applyElementsToCanvas(params.elements);
+      return {
+        success: result.ok !== false,
+        count: params.elements.length,
+        error: result.error,
+      };
+    }
+    case "canvas_delete": {
+      if (!params.ids || !Array.isArray(params.ids)) {
+        return { success: false, error: "Missing ids array" };
+      }
+      try {
+        const existing = localStorage.getItem("excalidraw");
+        if (!existing) return { success: false, error: "Canvas is empty" };
+        const elements = JSON.parse(existing);
+        const idSet = new Set(params.ids);
+        const filtered = elements.filter((e) => !idSet.has(e.id));
+        const removed = elements.length - filtered.length;
+        localStorage.setItem("excalidraw", JSON.stringify(filtered));
+        window.dispatchEvent(
+          new StorageEvent("storage", { key: "excalidraw" }),
+        );
+        return { success: true, removed, ids: params.ids };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+    case "canvas_modify": {
+      if (!params.id || !params.changes) {
+        return { success: false, error: "Missing id or changes" };
+      }
+      try {
+        const existing = localStorage.getItem("excalidraw");
+        if (!existing) return { success: false, error: "Canvas is empty" };
+        const elements = JSON.parse(existing);
+        const el = elements.find((e) => e.id === params.id);
+        if (!el)
+          return { success: false, error: `Element ${params.id} not found` };
+        // Merge changes
+        Object.assign(el, params.changes, { updated: Date.now() });
+        localStorage.setItem("excalidraw", JSON.stringify(elements));
+        window.dispatchEvent(
+          new StorageEvent("storage", { key: "excalidraw" }),
+        );
+        return {
+          success: true,
+          element: { id: el.id, type: el.type, ...params.changes },
+        };
+      } catch (err) {
+        return { success: false, error: err.message };
+      }
+    }
+    default:
+      return { success: false, error: `Unknown tool: ${tool}` };
   }
 }
 

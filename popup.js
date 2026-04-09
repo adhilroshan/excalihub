@@ -727,6 +727,8 @@ async function handlePopupSend(text) {
       if (portMsg.type === "chunk") {
         accumulatedContent = portMsg.fullContent;
         updatePopupStreamingMessage(portMsg.fullContent, thinkingDiv);
+      } else if (portMsg.type === "tool_call") {
+        renderPopupToolCallIndicator(portMsg.tool, portMsg.result);
       } else if (portMsg.type === "done") {
         resolve({ content: portMsg.fullContent });
       } else if (portMsg.type === "error") {
@@ -829,6 +831,57 @@ function appendPopupSetupPrompt() {
   row.appendChild(card);
   container.appendChild(row);
   container.scrollTop = container.scrollHeight;
+}
+
+function renderPopupToolCallIndicator(toolName, result) {
+  const TOOL_ICONS = {
+    canvas_read: "📖",
+    canvas_apply: "🎨",
+    canvas_delete: "🗑",
+    canvas_modify: "✏️",
+  };
+
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
+
+  const row = document.createElement("div");
+  row.style.cssText = "align-self:flex-start;margin-bottom:8px;width:100%;";
+
+  const card = document.createElement("div");
+  card.style.cssText =
+    "background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:6px 9px;display:flex;align-items:center;gap:7px;font-size:11px;";
+
+  const icon = document.createElement("span");
+  icon.style.cssText = "font-size:13px;flex-shrink:0;";
+  icon.textContent = TOOL_ICONS[toolName] || "🛠";
+
+  const info = document.createElement("span");
+  info.style.cssText = "color:var(--muted);line-height:1.4;flex:1;";
+  info.textContent = formatPopupToolSummary(toolName, result);
+
+  card.appendChild(icon);
+  card.appendChild(info);
+  row.appendChild(card);
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
+function formatPopupToolSummary(toolName, result) {
+  if (!result || !result.success) {
+    return `${toolName} — failed: ${result?.error || "unknown error"}`;
+  }
+  switch (toolName) {
+    case "canvas_read":
+      return `Read ${result.count} element${result.count !== 1 ? "s" : ""}`;
+    case "canvas_apply":
+      return `Applied ${result.count} element${result.count !== 1 ? "s" : ""} to canvas`;
+    case "canvas_delete":
+      return `Deleted ${result.removed} element${result.removed !== 1 ? "s" : ""}`;
+    case "canvas_modify":
+      return `Modified element`;
+    default:
+      return toolName;
+  }
 }
 
 // Init chat panel

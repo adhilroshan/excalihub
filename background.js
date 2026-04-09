@@ -810,8 +810,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }
         messages.push({ role: "user", content: userContent });
 
-        const stream = await callOpenRouter(messages, settings);
-
         // Find the port that the content script / popup opened before sending this message
         let port = null;
         if (msg._portName) {
@@ -845,9 +843,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
         }
 
-        if (port) {
+        if (port && _sender.tab) {
+          // Use tool-enabled loop (requires a tab to send tool calls to)
+          handleAIToolLoop(
+            messages,
+            settings,
+            _sender.tab.id,
+            port,
+            sendResponse,
+          );
+        } else if (port) {
+          // Popup — stream without tools for now (no direct tab access)
+          const stream = await callOpenRouter(messages, settings);
           handleAIStreamWithPort(stream, port, sendResponse);
         } else {
+          // No port — fall back to fire-and-forget
+          const stream = await callOpenRouter(messages, settings);
           handleAIStreamNoPort(stream, sendResponse);
         }
       } catch (err) {
@@ -1199,7 +1210,45 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const EXCALIDRAW_SYSTEM_PROMPT = `You are an Excalidraw diagram assistant integrated into a Chrome extension called ExcaliHub. You help users create, analyze, and improve diagrams.
 
-When generating diagrams, respond ONLY with valid JSON in this exact format:
+You have access to TOOLS that let you interact with the canvas. Use them when the user asks you to modify, read, or delete canvas content.
+
+## Available Tools
+
+### canvas_read()
+Reads the current canvas state. Use this FIRST when the user references existing elements (e.g. "delete the database box", "move the login form left").
+Returns: { "elements": [{ "id", "type", "x", "y", "width", "height", "text", "strokeColor", ... }, ...] }
+
+### canvas_apply(elements)
+Adds elements to the canvas. Use after generating a diagram or when the user says "add X".
+Params: { "elements": [element objects in Excalidraw format] }
+Returns: { "success": true, "count": N }
+
+### canvas_delete(ids)
+Removes specific elements by ID. Use when the user says "delete", "remove", or "get rid of" something on canvas.
+Params: { "ids": ["element-id-1", "element-id-2"] }
+Returns: { "success": true, "removed": N }
+
+### canvas_modify(id, changes)
+Modifies a single element's properties. Use for targeted edits like "move X to the right", "make this red", "rename to Y".
+Params: { "id": "element-id", "changes": { "x": 500, "y": 300, "text": "New Label", "strokeColor": "#ff0000", ... } }
+Returns: { "success": true, "element": { updated element object } }
+
+## How to Use Tools
+
+When you need to use a tool, respond with JSON:
+{
+  "action": "tool_use",
+  "tool": "canvas_read|canvas_apply|canvas_delete|canvas_modify",
+  "params": { ...tool-specific params... }
+}
+
+The tool result will be returned and you can continue the conversation. Use multiple tools in sequence if needed — e.g. canvas_read() first to find element IDs, then canvas_delete() or canvas_modify().
+
+IMPORTANT: Only use tools when they're relevant. For general questions or generating new diagrams from scratch, use the normal action types below.
+
+---
+
+When generating NEW diagrams (no existing elements to modify), respond with:
 {
   "action": "generate",
   "elements": [
@@ -1266,7 +1315,9 @@ IMPORTANT RULES:
    - Skip "angle":0, "locked":false, "groupIds":[], "boundElements":null, "link":null, "frameId":null unless needed.
    - Skip "fillStyle","strokeStyle","roughness","opacity" when using defaults (hachure, solid, 1, 100).
 6. For org charts / hierarchies, use rectangles for nodes with floating text labels — keep it simple.
-7. CRITICAL: Complete the ENTIRE JSON before stopping. If a diagram is complex, use fewer elements. A role hierarchy needs 10-15 elements max.`;
+7. CRITICAL: Complete the ENTIRE JSON before stopping. If a diagram is complex, use fewer elements. A role hierarchy needs 10-15 elements max.
+8. When using canvas_modify, try to change only the properties the user asked about — don't replace the entire element.
+9. When using canvas_delete, ALWAYS call canvas_read() first to find the correct element IDs unless the user explicitly provides them.`;
 
 function compressCanvasContext(scene) {
   if (!scene || !scene.elements || scene.elements.length === 0) return null;
@@ -1537,4 +1588,172 @@ function handleAIStreamNoPort(stream, sendResponse) {
 // Kept for backwards compatibility with any remaining fire-and-forget paths
 function handleAIStream(stream, sendResponse) {
   handleAIStreamNoPort(stream, sendResponse);
+}
+
+// ─── Tool Execution Loop ──────────────────────────────────────────────────────
+
+// Main loop: calls AI, detects tool_use, executes tool, re-calls AI. Max rounds.
+// Only the FINAL (non-tool) response is streamed to the user.
+// Intermediate tool calls are emitted on the port as { type: "tool_call" }.
+async function handleAIToolLoop(messages, settings, tabId, port, sendResponse) {
+  const MAX_TOOL_ROUNDS = 3;
+
+  let lastContent = "";
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    let fullContent = "";
+
+    try {
+      const stream = await callOpenRouter(messages, settings);
+      fullContent = await consumeStream(stream, port);
+      lastContent = fullContent;
+    } catch (err) {
+      sendResponse({ error: err.message });
+      return;
+    }
+
+    if (!fullContent.trim()) {
+      sendResponse({ error: "The AI returned no content." });
+      return;
+    }
+
+    // Try to parse the final response
+    let parsed;
+    try {
+      const jsonMatch = fullContent.match(
+        /\{[\s\S]*"action"\s*:\s*"(generate|improve|analyze|chat|tool_use)"[\s\S]*\}/,
+      );
+      if (!jsonMatch) break; // Not JSON — treat as final response
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      break; // Not valid JSON — treat as final response
+    }
+
+    if (parsed.action !== "tool_use") {
+      // Final response — already streamed, just confirm
+      sendResponse({ ok: true, content: fullContent });
+      return;
+    }
+
+    // Execute the tool
+    const { tool, params } = parsed;
+    let toolResult;
+    try {
+      toolResult = await executeTool(tool, params, tabId, port);
+    } catch (err) {
+      toolResult = { success: false, error: err.message };
+      port.postMessage({ type: "tool_call", tool, result: toolResult });
+    }
+
+    // Append tool result to messages and continue the loop
+    messages.push({
+      role: "tool",
+      content: JSON.stringify(toolResult),
+      name: tool,
+    });
+
+    // Also add a hidden assistant message for context (tool call itself)
+    messages.push({
+      role: "assistant",
+      content: JSON.stringify({ action: "tool_use", tool, params }),
+    });
+  }
+
+  // If we exhausted tool rounds without a final response, return whatever we got
+  sendResponse({
+    ok: true,
+    content:
+      lastContent ||
+      "Tool execution completed, but the AI did not produce a final response.",
+  });
+}
+
+// Consumes an SSE stream, returns the full content string.
+// Also streams chunks to the port if it's a chat/analyze response (not tool_use JSON).
+async function consumeStream(stream, port) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = "";
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") break;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) continue;
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta?.content) fullContent += delta.content;
+          if (delta?.reasoning) fullContent += delta.reasoning;
+        } catch {}
+      }
+    }
+  } catch {}
+
+  return fullContent;
+}
+
+// Executes a single tool call and returns the result.
+// Also emits a tool_call event on the port for UI rendering.
+async function executeTool(tool, params, tabId, port) {
+  const postResult = (result) => {
+    try {
+      port.postMessage({ type: "tool_call", tool, result });
+    } catch (_) {}
+    return result;
+  };
+
+  switch (tool) {
+    case "canvas_read": {
+      const result = await sendToolToTab(tabId, "canvas_read", {});
+      return postResult(result);
+    }
+    case "canvas_apply": {
+      const result = await sendToolToTab(tabId, "canvas_apply", params);
+      return postResult(result);
+    }
+    case "canvas_delete": {
+      const result = await sendToolToTab(tabId, "canvas_delete", params);
+      return postResult(result);
+    }
+    case "canvas_modify": {
+      const result = await sendToolToTab(tabId, "canvas_modify", params);
+      return postResult(result);
+    }
+    default:
+      return postResult({ success: false, error: `Unknown tool: ${tool}` });
+  }
+}
+
+// Sends a tool execution request to the Excalidraw content script.
+function sendToolToTab(tabId, tool, params) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "AI_EXECUTE_TOOL", tool, params },
+      { timeout: 10000 },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(
+            response || {
+              success: false,
+              error: "No response from content script",
+            },
+          );
+        }
+      },
+    );
+  });
 }
