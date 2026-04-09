@@ -386,68 +386,378 @@ function showConflictDialog(fileName) {
   });
 }
 
-// ─── AI Quick Actions ────────────────────────────────────────────────────────
+// ─── Markdown renderer (shared) ─────────────────────────────────────────────
 
-document.getElementById("ai-quick-generate")?.addEventListener("click", async () => {
-  const tab = await getActiveExcalidrawTab();
-  if (!tab) return;
-  const prompt = window.prompt("Describe the diagram you want to generate:");
-  if (!prompt) return;
+function renderMarkdownInto(el, text) {
+  el.innerHTML = "";
+  const div = document.createElement("div");
+  div.style.cssText = "font-size:11px;line-height:1.6;word-break:break-word;";
+  let html = text
+    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+    .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g,"<em>$1</em>")
+    .replace(/`([^`]+)`/g,`<code style="font-family:'DM Mono',monospace;font-size:10px;background:rgba(0,0,0,.2);border-radius:3px;padding:1px 4px;">$1</code>`)
+    .replace(/^[-•] (.+)$/gm,"<li>$1</li>")
+    .replace(/(<li>.*<\/li>)/gs,"<ul style='margin:3px 0 3px 14px;padding:0'>$1</ul>")
+    .replace(/\n{2,}/g,"</p><p style='margin:0 0 4px'>")
+    .replace(/\n/g,"<br>");
+  div.innerHTML = "<p style='margin:0 0 4px'>" + html + "</p>";
+  el.appendChild(div);
+}
 
-  const btn = document.getElementById("ai-quick-generate");
-  btn.textContent = "Generating...";
-  btn.disabled = true;
+// ─── AI Chat Panel ────────────────────────────────────────────────────────────
 
-  const sceneResult = await chrome.tabs.sendMessage(tab.id, { type: "GET_SCENE" });
-  const response = await chrome.runtime.sendMessage({
-    type: "AI_CHAT",
-    prompt,
-    canvasContext: sceneResult?.scene,
-    history: [],
-  });
+let popupChatState = {
+  history: [],
+  isStreaming: false,
+  contextIncluded: true,
+  initialized: false,
+};
 
-  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg> Generate';
-  btn.disabled = false;
+const SEND_DEBOUNCE_MS = 500;
+let lastSendTime = 0;
 
-  if (response?.ok) {
-    showToast("Diagram generated! Check the floating AI panel.", "success");
-  } else {
-    showToast(response?.error || "Generation failed", "error");
-  }
-});
+function showChatPanel() {
+  const section = document.getElementById("ai-chat-section");
+  if (section) section.style.display = "block";
+  const input = document.getElementById("ai-chat-input");
+  if (input) input.focus();
+}
 
-document.getElementById("ai-quick-analyze")?.addEventListener("click", async () => {
-  const tab = await getActiveExcalidrawTab();
-  if (!tab) return;
+function appendPopupMessage(text, type) {
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
 
-  const btn = document.getElementById("ai-quick-analyze");
-  btn.textContent = "Analyzing...";
-  btn.disabled = true;
+  const row = document.createElement("div");
+  row.style.cssText = `display:flex;flex-direction:column;margin-bottom:12px;align-items:${type === "user" ? "flex-end" : "flex-start"};`;
 
-  const sceneResult = await chrome.tabs.sendMessage(tab.id, { type: "GET_SCENE" });
-  if (!sceneResult?.scene) {
-    showToast("Canvas is empty", "error");
-    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Analyze';
-    btn.disabled = false;
+  if (type === "user") {
+    const bubble = document.createElement("div");
+    bubble.className = "ai-chat-msg user";
+    bubble.textContent = text;
+    row.appendChild(bubble);
+  } else if (type === "assistant") {
+    const bubble = document.createElement("div");
+    bubble.className = "ai-chat-msg assistant";
+    renderMarkdownInto(bubble, text);
+    row.appendChild(bubble);
+    // Copy button
+    const copyRow = document.createElement("div");
+    copyRow.style.cssText = "display:flex;justify-content:flex-start;margin-top:3px;";
+    const copyBtn = document.createElement("button");
+    copyBtn.style.cssText = "background:none;border:none;color:var(--muted);font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;padding:1px 4px;border-radius:3px;transition:color 0.15s;";
+    copyBtn.textContent = "Copy";
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.textContent = "Copied!";
+        copyBtn.style.color = "var(--success)";
+        setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.style.color = ""; }, 1500);
+      });
+    });
+    copyRow.appendChild(copyBtn);
+    row.appendChild(copyRow);
+  } else if (type === "generate" || type === "improve") {
+    // This type is passed for generate cards — handled via appendPopupGenCard
     return;
+  } else {
+    const bubble = document.createElement("div");
+    bubble.className = `ai-chat-msg ${type}`;
+    bubble.textContent = text;
+    row.appendChild(bubble);
+  }
+
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendPopupGenCard(parsed) {
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
+  const isImprove = parsed.action === "improve";
+  const row = document.createElement("div");
+  row.style.cssText = "align-self:flex-start;margin-bottom:12px;width:100%;";
+
+  const card = document.createElement("div");
+  card.style.cssText = "background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;";
+
+  const header = document.createElement("div");
+  header.style.cssText = "padding:6px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;";
+  const badge = document.createElement("span");
+  badge.style.cssText = `font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:${isImprove?"#1a2a1a":"var(--accent-dim)"};color:${isImprove?"#4ade80":"var(--accent)"};`;
+  badge.textContent = isImprove ? "Improved" : "Generated";
+  const count = document.createElement("span");
+  count.style.cssText = "font-size:11px;color:var(--muted);";
+  count.textContent = parsed.elements.length + " elements";
+  header.appendChild(badge); header.appendChild(count);
+  card.appendChild(header);
+
+  if (parsed.summary) {
+    const sum = document.createElement("div");
+    sum.style.cssText = "padding:5px 10px;font-size:11px;color:var(--text);border-bottom:1px solid var(--border);line-height:1.4;";
+    sum.textContent = parsed.summary;
+    card.appendChild(sum);
+  }
+
+  const footer = document.createElement("div");
+  footer.style.cssText = "padding:7px 10px;";
+  const applyBtn = document.createElement("button");
+  applyBtn.style.cssText = "width:100%;background:linear-gradient(135deg,#1a2f1a,#1e3a1e);border:1px solid #2d5a2d;color:#4ade80;border-radius:6px;padding:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:4px;transition:opacity .15s;";
+  applyBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Apply to Canvas`;
+  applyBtn.addEventListener("click", async () => {
+    const tab = await getActiveExcalidrawTab();
+    if (!tab) { applyBtn.textContent = "No Excalidraw tab open"; return; }
+    chrome.tabs.sendMessage(tab.id, { type: "APPLY_ELEMENTS", elements: parsed.elements });
+    applyBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied!`;
+    applyBtn.style.background = "var(--bg)";
+    applyBtn.style.borderColor = "var(--border)";
+    applyBtn.style.color = "var(--muted)";
+    applyBtn.disabled = true;
+  });
+  footer.appendChild(applyBtn);
+  card.appendChild(footer);
+  row.appendChild(card);
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
+function renderPopupSuggestions() {
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
+  const SUGGESTIONS = [
+    "Build a school org chart",
+    "Draw a flowchart for student registration",
+    "Analyze my current diagram",
+    "Create a system architecture for a web app",
+  ];
+  const wrap = document.createElement("div");
+  wrap.id = "ai-popup-suggestions";
+  wrap.style.cssText = "padding:4px 0 8px;display:flex;flex-direction:column;gap:5px;";
+  const title = document.createElement("div");
+  title.style.cssText = "font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px;";
+  title.textContent = "Try asking…";
+  wrap.appendChild(title);
+  SUGGESTIONS.forEach(s => {
+    const chip = document.createElement("button");
+    chip.style.cssText = "background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;transition:border-color .15s,color .15s;";
+    chip.textContent = s;
+    chip.addEventListener("mouseenter", () => { chip.style.borderColor="var(--accent)"; chip.style.color="var(--accent)"; });
+    chip.addEventListener("mouseleave", () => { chip.style.borderColor="var(--border)"; chip.style.color="var(--text)"; });
+    chip.addEventListener("click", () => {
+      const input = document.getElementById("ai-chat-input");
+      if (input) { input.value = s; input.focus(); }
+      wrap.remove();
+    });
+    wrap.appendChild(chip);
+  });
+  container.appendChild(wrap);
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendPopupThinking() {
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return null;
+  const div = document.createElement("div");
+  div.className = "ai-chat-msg thinking";
+  div.innerHTML = `
+    <span>Thinking</span>
+    <span style="display: inline-flex; gap: 3px;">
+      <span style="width: 4px; height: 4px; background: var(--muted); border-radius: 50%; animation: thinkingBounce 1.2s infinite;"></span>
+      <span style="width: 4px; height: 4px; background: var(--muted); border-radius: 50%; animation: thinkingBounce 1.2s infinite 0.2s;"></span>
+      <span style="width: 4px; height: 4px; background: var(--muted); border-radius: 50%; animation: thinkingBounce 1.2s infinite 0.4s;"></span>
+    </span>
+  `;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return div;
+}
+
+async function handlePopupSend(text) {
+  if (!text || popupChatState.isStreaming) return;
+
+  const now = Date.now();
+  if (now - lastSendTime < SEND_DEBOUNCE_MS) return;
+  lastSendTime = now;
+
+  showChatPanel();
+
+  const inputEl = document.getElementById("ai-chat-input");
+  if (inputEl) { inputEl.value = ""; inputEl.style.height = "auto"; }
+
+  appendPopupMessage(text, "user");
+  const thinkingDiv = appendPopupThinking();
+
+  popupChatState.history.push({
+    role: "user",
+    content: text,
+    timestamp: Date.now(),
+  });
+  popupChatState.isStreaming = true;
+
+  const sendBtn = document.getElementById("ai-chat-send");
+  if (sendBtn) sendBtn.disabled = true;
+
+  const tab = await getActiveExcalidrawTab();
+  let canvasContext = null;
+  if (tab && popupChatState.contextIncluded) {
+    try {
+      const sceneResult = await chrome.tabs.sendMessage(tab.id, {
+        type: "GET_SCENE",
+      });
+      canvasContext = sceneResult?.scene || null;
+    } catch (_) {}
   }
 
   const response = await chrome.runtime.sendMessage({
     type: "AI_CHAT",
-    prompt: "Analyze this diagram. Describe what it shows and suggest improvements.",
-    canvasContext: sceneResult.scene,
-    history: [],
+    prompt: text,
+    canvasContext,
+    history: popupChatState.history.filter((m) => m.role !== "system"),
   });
 
-  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Analyze';
-  btn.disabled = false;
+  popupChatState.isStreaming = false;
+  if (sendBtn) sendBtn.disabled = false;
+  if (thinkingDiv) thinkingDiv.remove();
 
-  if (response?.ok) {
-    showToast("Analysis ready! Check the AI panel.", "success");
+  if (response?.error) {
+    appendPopupMessage(response.error, "error");
   } else {
-    showToast(response?.error || "Analysis failed", "error");
+    const fullContent = response?.content || "";
+    // Parse the AI response to check for generate/improve actions
+    let parsed = null;
+    try {
+      const jsonMatch = fullContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+    } catch (_) {}
+
+    if (parsed && (parsed.action === "generate" || parsed.action === "improve") && Array.isArray(parsed.elements)) {
+      appendPopupGenCard(parsed);
+    } else {
+      appendPopupMessage(fullContent, "assistant");
+    }
+
+    popupChatState.history.push({
+      role: "assistant",
+      content: fullContent,
+      timestamp: Date.now(),
+    });
+
+    chrome.storage.local
+      .set({ popupAiHistory: popupChatState.history.slice(-30) })
+      .catch(() => {});
   }
-});
+
+  const container = document.getElementById("ai-chat-messages");
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
+// Init chat panel
+function initPopupChat() {
+  if (popupChatState.initialized) return;
+  popupChatState.initialized = true;
+
+  chrome.storage.local
+    .get("popupAiHistory")
+    .then(({ popupAiHistory = [] }) => {
+      popupChatState.history = popupAiHistory;
+      if (popupChatState.history.length > 0) {
+        const container = document.getElementById("ai-chat-messages");
+        if (container) {
+          container.innerHTML = "";
+          for (const msg of popupChatState.history) {
+            if (msg.role === "user") appendPopupMessage(msg.content, "user");
+            else if (msg.role === "assistant") appendPopupMessage(msg.content, "assistant");
+          }
+        }
+      } else {
+        // Show suggestions on empty history
+        showChatPanel();
+        renderPopupSuggestions();
+      }
+    })
+    .catch(() => {});
+
+  // Send button
+  document.getElementById("ai-chat-send")?.addEventListener("click", () => {
+    const input = document.getElementById("ai-chat-input");
+    if (input) handlePopupSend(input.value.trim());
+  });
+
+  // Input handling
+  const input = document.getElementById("ai-chat-input");
+  if (input) {
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        handlePopupSend(input.value.trim());
+      }
+    });
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 60) + "px";
+    });
+  }
+
+  document
+    .getElementById("ai-chat-clear-btn")
+    ?.addEventListener("click", () => {
+      popupChatState.history = [];
+      chrome.storage.local.remove("popupAiHistory").catch(() => {});
+      const container = document.getElementById("ai-chat-messages");
+      if (container) container.innerHTML = "";
+      renderPopupSuggestions();
+    });
+
+  // Context toggle
+  const contextBtn = document.getElementById("ai-chat-context-btn");
+  contextBtn?.addEventListener("click", () => {
+    popupChatState.contextIncluded = !popupChatState.contextIncluded;
+    contextBtn.classList.toggle("active", popupChatState.contextIncluded);
+    contextBtn.textContent = popupChatState.contextIncluded
+      ? "Context: ON"
+      : "Context: OFF";
+  });
+
+  // Quick action buttons now open the chat panel with pre-filled text
+  document
+    .getElementById("ai-quick-generate")
+    ?.addEventListener("click", () => {
+      showChatPanel();
+      const input = document.getElementById("ai-chat-input");
+      if (input) {
+        input.value = "Generate a diagram of ";
+        input.focus();
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 60) + "px";
+      }
+    });
+
+  document
+    .getElementById("ai-quick-analyze")
+    ?.addEventListener("click", async () => {
+      const tab = await getActiveExcalidrawTab();
+      if (!tab) {
+        showToast("Open Excalidraw first.", "error");
+        return;
+      }
+      showChatPanel();
+      handlePopupSend(
+        "Analyze this diagram. Describe what it shows and suggest improvements.",
+      );
+    });
+}
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
 init();
+
+// Init chat when DOM is ready (but only in 'ready' state)
+const observer = new MutationObserver(() => {
+  if (document.getElementById("state-ready")?.classList.contains("active")) {
+    initPopupChat();
+  }
+});
+observer.observe(document.body, {
+  childList: true,
+  subtree: true,
+  attributes: true,
+  attributeFilter: ["class"],
+});

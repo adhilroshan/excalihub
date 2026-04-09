@@ -1,4 +1,4 @@
-// content.js
+﻿// content.js
 // Injected into excalidraw.com — extracts scene data from localStorage and injects sidebar
 
 // ─── Scene Extraction ────────────────────────────────────────────────────────
@@ -62,14 +62,26 @@ function validateAndRepairElements(rawElements) {
       continue;
     }
 
-    const validTypes = ["rectangle", "ellipse", "diamond", "text", "line", "arrow", "freedraw"];
+    const validTypes = [
+      "rectangle",
+      "ellipse",
+      "diamond",
+      "text",
+      "line",
+      "arrow",
+      "freedraw",
+    ];
     if (!validTypes.includes(el.type)) {
       errors.push(`Element ${i}: invalid type "${el.type}"`);
       continue;
     }
 
     const repaired_el = {
-      id: el.id || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)),
+      id:
+        el.id ||
+        (crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2)),
       type: el.type,
       x: Number(el.x) || 0,
       y: Number(el.y) || 0,
@@ -110,13 +122,18 @@ function validateAndRepairElements(rawElements) {
     }
 
     if (el.type === "line" || el.type === "arrow") {
-      repaired_el.points = Array.isArray(el.points) && el.points.length > 0
-        ? el.points.map((p) => [Number(p[0]) || 0, Number(p[1]) || 0])
-        : [[0, 0], [100, 0]];
+      repaired_el.points =
+        Array.isArray(el.points) && el.points.length > 0
+          ? el.points.map((p) => [Number(p[0]) || 0, Number(p[1]) || 0])
+          : [
+              [0, 0],
+              [100, 0],
+            ];
       repaired_el.startBinding = el.startBinding || null;
       repaired_el.endBinding = el.endBinding || null;
       repaired_el.startArrowhead = el.startArrowhead || null;
-      repaired_el.endArrowhead = el.endArrowhead || (el.type === "arrow" ? "arrow" : null);
+      repaired_el.endArrowhead =
+        el.endArrowhead || (el.type === "arrow" ? "arrow" : null);
       repaired_el.lastCommittedPoint = null;
     }
 
@@ -133,13 +150,19 @@ function validateAndRepairElements(rawElements) {
     return { error: "No valid elements generated", errors };
   }
 
-  return { elements: repaired, warnings: errors.length > 0 ? errors : undefined };
+  return {
+    elements: repaired,
+    warnings: errors.length > 0 ? errors : undefined,
+  };
 }
 
 function centerElementsOnCanvas(elements) {
   if (!elements || elements.length === 0) return elements;
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   for (const el of elements) {
     minX = Math.min(minX, el.x);
     minY = Math.min(minY, el.y);
@@ -188,7 +211,24 @@ function parseAIResponse(content) {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return { action: "chat", message: content };
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const raw = jsonMatch[0];
+
+    // Detect truncated JSON by trying to parse it — brace-counting fails
+    // when text contains { or } inside string values.
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      if (parseErr instanceof SyntaxError) {
+        return {
+          action: "error",
+          message:
+            "The AI response was cut off mid-JSON (token limit reached). Try a simpler request or raise Max Tokens in settings.",
+        };
+      }
+      throw parseErr;
+    }
+
     if (parsed.action === "generate" && Array.isArray(parsed.elements)) {
       const result = validateAndRepairElements(parsed.elements);
       if (result.error) return { action: "error", message: result.error };
@@ -414,23 +454,55 @@ function injectSidebar() {
 
         <!-- AI Chat Panel (hidden by default) -->
         <div id="excalihub-ai-sidebar-panel" style="display: none; flex-direction: column; height: calc(100vh - 120px);">
+          <!-- AI Header with controls -->
+          <div id="excalihub-ai-sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <button id="excalihub-ai-context-toggle" title="Include canvas context" style="
+                background: #1a2a1a;
+                border: 1px solid #2d5a2d;
+                color: #4ade80;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-size: 10px;
+                cursor: pointer;
+                font-family: 'DM Sans', sans-serif;
+                transition: all 0.15s;
+              ">Context: ON</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 4px;">
+              <button id="excalihub-ai-clear" title="New conversation" style="
+                background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; display: flex; align-items: center; border-radius: 4px; transition: color 0.15s, background 0.15s;
+              ">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path d="M2 4h10M5 4V2.5a1 1 0 011-1h2a1 1 0 011 1V4M11 4v7.5a1 1 0 01-1 1H4a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+          </div>
           <div id="excalihub-ai-sidebar-messages" style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
-            <div style="text-align: center; color: #6b7685; font-size: 12px; padding: 16px;">
+            <div style="text-align: center; color: var(--muted); font-size: 12px; padding: 16px;">
               Ask me to generate, analyze, or improve your diagrams.
             </div>
           </div>
-          <div style="display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #252b33;">
+          <div style="display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border);">
             <textarea id="excalihub-ai-sidebar-input" placeholder="Ask AI..." rows="1" style="
-              flex: 1; background: #0d0f11; border: 1px solid #252b33; color: #e8edf2;
+              flex: 1; background: var(--bg); border: 1px solid var(--border); color: var(--text);
               border-radius: 6px; padding: 7px 10px; font-size: 12px; outline: none;
               resize: none; font-family: 'DM Sans', sans-serif; max-height: 80px;
+              transition: border-color 0.15s;
             "></textarea>
             <button id="excalihub-ai-sidebar-send" style="
               background: linear-gradient(135deg, #7c3aed, #4f8ef7); border: none;
               border-radius: 6px; padding: 0 12px; cursor: pointer; display: flex; align-items: center;
+              transition: opacity 0.15s;
             ">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-6 12V8H2z" fill="white"/></svg>
             </button>
+            <button id="excalihub-ai-sidebar-stop" style="
+              background: #5c1c1c; border: 1px solid #f76f6f; border-radius: 6px; padding: 0 12px;
+              cursor: pointer; display: none; align-items: center; justify-content: center;
+              color: #f76f6f; font-size: 11px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+            ">Stop</button>
           </div>
         </div>
       </div>
@@ -1193,6 +1265,201 @@ function injectSidebar() {
     #excalihub-content::-webkit-scrollbar-thumb:hover {
       background: #3a4250;
     }
+
+    @keyframes thinkingDot {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-4px); opacity: 1; }
+    }
+
+    /* ── AI message markdown ── */
+    .eai-msg-text strong { font-weight: 600; color: var(--text); }
+    .eai-msg-text em { font-style: italic; opacity: 0.85; }
+    .eai-msg-text code {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 4px;
+    }
+    .eai-msg-text p { margin: 0 0 6px 0; }
+    .eai-msg-text p:last-child { margin-bottom: 0; }
+    .eai-msg-text ul, .eai-msg-text ol {
+      margin: 4px 0 6px 16px;
+      padding: 0;
+    }
+    .eai-msg-text li { margin-bottom: 2px; line-height: 1.5; }
+    .eai-msg-text h3 {
+      font-size: 12px; font-weight: 600;
+      margin: 6px 0 3px 0; color: var(--text);
+    }
+
+    /* ── Message row hover actions ── */
+    .eai-msg-row { position: relative; }
+    .eai-msg-row:hover .eai-msg-actions { opacity: 1; }
+    .eai-msg-actions {
+      opacity: 0;
+      transition: opacity 0.15s;
+      position: absolute;
+      bottom: -18px;
+      right: 0;
+      display: flex;
+      gap: 4px;
+      z-index: 2;
+    }
+    .eai-action-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 10px;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .eai-action-btn:hover { color: var(--text); border-color: var(--accent); }
+    .eai-action-btn.copied { color: var(--success); border-color: var(--success); }
+
+    /* ── Generate card ── */
+    .eai-gen-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .eai-gen-card:hover { border-color: var(--accent); }
+    .eai-gen-card-header {
+      padding: 8px 10px 6px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .eai-gen-badge {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+    .eai-gen-badge.improve { background: #1a2a1a; color: #4ade80; }
+    .eai-gen-count {
+      font-size: 11px;
+      color: var(--muted);
+      flex: 1;
+    }
+    .eai-gen-summary {
+      font-size: 11px;
+      color: var(--text);
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      line-height: 1.5;
+    }
+    .eai-gen-footer {
+      padding: 8px 10px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .eai-apply-btn {
+      flex: 1;
+      background: linear-gradient(135deg, #1a2f1a, #1e3a1e);
+      border: 1px solid #2d5a2d;
+      color: #4ade80;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: 'DM Sans', sans-serif;
+      transition: opacity 0.15s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .eai-apply-btn:hover { opacity: 0.88; }
+    .eai-apply-btn:active { transform: scale(0.97); }
+    .eai-apply-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .eai-apply-btn.applied {
+      background: var(--bg);
+      border-color: var(--border);
+      color: var(--muted);
+    }
+
+    /* ── Suggested prompts ── */
+    .eai-suggestions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 12px;
+      align-items: stretch;
+    }
+    .eai-suggestions-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    .eai-suggestion-chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      text-align: left;
+      transition: border-color 0.15s, background 0.15s;
+      line-height: 1.4;
+    }
+    .eai-suggestion-chip:hover {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+    }
+
+    /* ── Char counter ── */
+    .eai-char-counter {
+      font-size: 10px;
+      color: var(--muted);
+      text-align: right;
+      padding: 2px 4px 0;
+      transition: color 0.15s;
+    }
+    .eai-char-counter.warn { color: var(--warn); }
+
+    /* ── Streaming cursor ── */
+    .eai-cursor {
+      display: inline-block;
+      width: 2px;
+      height: 12px;
+      background: var(--accent);
+      border-radius: 1px;
+      margin-left: 2px;
+      vertical-align: text-bottom;
+      animation: eai-blink 0.8s step-end infinite;
+    }
+    @keyframes eai-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* ── Message fade-in ── */
+    @keyframes eai-fadein {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .eai-msg-row { animation: eai-fadein 0.18s ease; }
   `;
 
   document.head.appendChild(style);
@@ -1274,6 +1541,8 @@ function injectSidebar() {
   const filesSection = sidebarEl.querySelector(".sidebar-section");
   const aiSidebarPanel = document.getElementById("excalihub-ai-sidebar-panel");
 
+  let aiChatInitialized = false;
+
   if (tabFiles && tabAI && filesSection && aiSidebarPanel) {
     tabFiles.addEventListener("click", () => {
       tabFiles.style.background = "#4f8ef7";
@@ -1291,106 +1560,736 @@ function injectSidebar() {
       tabFiles.style.color = "#6b7685";
       filesSection.style.display = "none";
       aiSidebarPanel.style.display = "flex";
+
+      // Lazy initialize AI chat on first tab click
+      if (!aiChatInitialized) {
+        aiChatInitialized = true;
+        initSidebarAIChat();
+      }
     });
   }
 
-  // Sidebar AI chat
-  const sidebarInput = document.getElementById("excalihub-ai-sidebar-input");
-  const sidebarSend = document.getElementById("excalihub-ai-sidebar-send");
-  const sidebarMessages = document.getElementById("excalihub-ai-sidebar-messages");
+  // ─── Sidebar AI Chat ───────────────────────────────────────────────────────
 
-  if (sidebarInput && sidebarSend) {
-    sidebarInput.addEventListener("input", () => {
-      sidebarInput.style.height = "auto";
-      sidebarInput.style.height = Math.min(sidebarInput.scrollHeight, 80) + "px";
+  function initSidebarAIChat() {
+    const input = document.getElementById("excalihub-ai-sidebar-input");
+    const sendBtn = document.getElementById("excalihub-ai-sidebar-send");
+    const stopBtn = document.getElementById("excalihub-ai-sidebar-stop");
+    const messagesEl = document.getElementById("excalihub-ai-sidebar-messages");
+    const clearBtn = document.getElementById("excalihub-ai-clear");
+    const contextToggle = document.getElementById(
+      "excalihub-ai-context-toggle",
+    );
+
+    if (!input || !sendBtn || !messagesEl) return;
+
+    // Load persisted conversation history
+    (async function loadHistory() {
+      try {
+        const stored = await chrome.storage.local.get("aiConversationHistory");
+        if (
+          stored.aiConversationHistory &&
+          Array.isArray(stored.aiConversationHistory)
+        ) {
+          aiChatState.history = stored.aiConversationHistory;
+          if (aiChatState.history.length > 0) {
+            messagesEl.innerHTML = "";
+            for (const msg of aiChatState.history) {
+              if (msg.role === "user") {
+                appendUserMessage(msg.content);
+              } else {
+                appendAIMessage(msg.content, msg.parsed);
+              }
+            }
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load AI history:", err);
+      }
+      // Default welcome with suggested prompts
+      messagesEl.innerHTML = "";
+      renderSuggestedPrompts();
+    })();
+
+    // Load context mode from settings
+    (async function loadContextMode() {
+      try {
+        const aiSettings = await chrome.runtime.sendMessage({
+          type: "AI_GET_SETTINGS",
+        });
+        if (aiSettings?.ok) {
+          aiChatState.contextIncluded =
+            aiSettings.settings.contextMode === "auto";
+          if (contextToggle) {
+            updateContextToggle();
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load AI settings:", err);
+      }
+    })();
+
+    function updateContextToggle() {
+      contextToggle.textContent = aiChatState.contextIncluded
+        ? "Context: ON"
+        : "Context: OFF";
+      contextToggle.style.background = aiChatState.contextIncluded
+        ? "#1a2a1a"
+        : "var(--surface)";
+      contextToggle.style.borderColor = aiChatState.contextIncluded
+        ? "#2d5a2d"
+        : "var(--border)";
+      contextToggle.style.color = aiChatState.contextIncluded
+        ? "#4ade80"
+        : "var(--muted)";
+    }
+
+    // Context toggle
+    if (contextToggle) {
+      contextToggle.addEventListener("click", () => {
+        aiChatState.contextIncluded = !aiChatState.contextIncluded;
+        updateContextToggle();
+      });
+    }
+
+    // Clear conversation
+    if (clearBtn) {
+      clearBtn.addEventListener("click", async () => {
+        aiChatState.history = [];
+        try {
+          await chrome.storage.local.set({ aiConversationHistory: [] });
+        } catch (err) {
+          console.error("Failed to clear history:", err);
+        }
+        messagesEl.innerHTML = `
+          <div style="text-align: center; color: var(--muted); font-size: 12px; padding: 16px;">
+            Conversation cleared. Ask me anything!
+          </div>`;
+        renderSuggestedPrompts();
+      });
+    }
+
+    // Auto-resize textarea
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = Math.min(input.scrollHeight, 80) + "px";
     });
 
-    sidebarInput.addEventListener("keydown", (e) => {
+    // Enter to send
+    input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        sidebarSend.click();
+        sendBtn.click();
       }
     });
 
-    sidebarSend.addEventListener("click", async () => {
-      const text = sidebarInput.value.trim();
+    // Debounced send
+    let lastSendTime = 0;
+    const SEND_DEBOUNCE_MS = 500;
+
+    sendBtn.addEventListener("click", async () => {
+      const now = Date.now();
+      if (now - lastSendTime < SEND_DEBOUNCE_MS) return;
+
+      const text = input.value.trim();
       if (!text || aiChatState.isStreaming) return;
 
-      sidebarInput.value = "";
-      sidebarInput.style.height = "auto";
+      lastSendTime = now;
+      input.value = "";
+      input.style.height = "auto";
 
-      const userDiv = document.createElement("div");
-      userDiv.style.cssText = "align-self: flex-end; max-width: 85%; background: #1e3a5f; color: #e8edf2; padding: 7px 10px; border-radius: 10px 10px 4px 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;";
-      userDiv.textContent = text;
-      sidebarMessages.appendChild(userDiv);
-
-      const thinkingDiv = document.createElement("div");
-      thinkingDiv.style.cssText = "align-self: flex-start; max-width: 90%; background: #161a1f; color: #6b7685; padding: 7px 10px; border-radius: 10px 10px 10px 4px; font-size: 12px; border: 1px solid #252b33;";
-      thinkingDiv.textContent = "Thinking...";
-      sidebarMessages.appendChild(thinkingDiv);
-      sidebarMessages.scrollTop = sidebarMessages.scrollHeight;
-
-      const canvasContext = aiChatState.contextIncluded ? getExcalidrawScene().scene : null;
-
-      aiChatState.history.push({ role: "user", content: text, timestamp: Date.now() });
-      aiChatState.isStreaming = true;
-      sidebarSend.style.opacity = "0.5";
-
-      const response = await chrome.runtime.sendMessage({
-        type: "AI_CHAT",
-        prompt: text,
-        canvasContext,
-        history: aiChatState.history.filter((m) => m.role !== "system"),
-      });
-
-      aiChatState.isStreaming = false;
-      sidebarSend.style.opacity = "1";
-
-      const fullContent = response?.content || response?.error || "No response";
-      const parsed = response?.error ? null : parseAIResponse(fullContent);
-
-      thinkingDiv.remove();
-
-      if (response?.error) {
-        const errDiv = document.createElement("div");
-        errDiv.style.cssText = "align-self: flex-start; max-width: 90%; background: #1a1010; color: #f76f6f; padding: 7px 10px; border-radius: 10px 10px 10px 4px; font-size: 12px; border: 1px solid #5c1c1c;";
-        errDiv.textContent = response.error;
-        sidebarMessages.appendChild(errDiv);
-      } else if (parsed && (parsed.action === "generate" || parsed.action === "improve")) {
-        const card = document.createElement("div");
-        card.style.cssText = "align-self: flex-start; max-width: 95%; background: #161a1f; border: 1px solid #252b33; border-radius: 8px; overflow: hidden;";
-        card.innerHTML = '<div style="padding: 6px 10px; font-size: 10px; color: #6b7685; border-bottom: 1px solid #252b33;">' + (parsed.action === "generate" ? "Generated" : "Improved") + " — " + parsed.elements.length + " elements" + (parsed.summary ? "<br>" + parsed.summary : "") + '</div><div style="padding: 8px 10px;"><button class="sidebar-ai-apply" style="background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 11px; font-weight: 600; font-family: \'DM Sans\', sans-serif;">Apply to Canvas</button></div>';
-        card.querySelector(".sidebar-ai-apply").addEventListener("click", function () {
-          applyElementsToCanvas(parsed.elements);
-          this.textContent = "Applied!";
-          this.style.color = "#6b7685";
-          this.style.borderColor = "#252b33";
-          this.style.background = "#0d0f11";
-          this.disabled = true;
-        });
-        sidebarMessages.appendChild(card);
-      } else {
-        const aiDiv = document.createElement("div");
-        aiDiv.style.cssText = "align-self: flex-start; max-width: 90%; background: #161a1f; color: #e8edf2; padding: 7px 10px; border-radius: 10px 10px 10px 4px; font-size: 12px; line-height: 1.5; border: 1px solid #252b33; white-space: pre-wrap; word-break: break-word;";
-        aiDiv.textContent = parsed?.message || parsed?.analysis || fullContent;
-        sidebarMessages.appendChild(aiDiv);
+      // Clear welcome message if present
+      if (
+        messagesEl.querySelector('[style*="text-align: center"]') &&
+        aiChatState.history.length === 0
+      ) {
+        messagesEl.innerHTML = "";
       }
 
+      // Append user message
+      appendUserMessage(text);
+
+      // Show thinking indicator
+      showThinkingIndicator();
+
+      // Show stop button, hide send
+      aiChatState.isStreaming = true;
+      sendBtn.style.display = "none";
+      if (stopBtn) stopBtn.style.display = "flex";
+
+      const canvasContext = aiChatState.contextIncluded
+        ? getExcalidrawScene().scene
+        : null;
+
       aiChatState.history.push({
-        role: "assistant",
-        content: fullContent,
-        parsed,
+        role: "user",
+        content: text,
         timestamp: Date.now(),
       });
 
-      chrome.storage.local.set({
-        aiConversationHistory: aiChatState.history.slice(-50),
-      }).catch(() => {});
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: "AI_CHAT",
+          prompt: text,
+          canvasContext,
+          history: aiChatState.history.filter((m) => m.role !== "system"),
+        });
 
-      sidebarMessages.scrollTop = sidebarMessages.scrollHeight;
+        removeThinkingIndicator();
+
+        aiChatState.isStreaming = false;
+        sendBtn.style.display = "flex";
+        if (stopBtn) stopBtn.style.display = "none";
+
+        if (response?.error) {
+          appendErrorMessage(response.error);
+          return;
+        }
+
+        const fullContent = response?.content || "";
+        const parsed = parseAIResponse(fullContent);
+
+        if (parsed.action === "generate" || parsed.action === "improve") {
+          const displayText = parsed.summary || fullContent;
+          appendAIMessage(displayText, parsed);
+        } else if (parsed.action === "analyze") {
+          appendAIMessage(parsed.analysis || fullContent, parsed);
+        } else {
+          appendAIMessage(parsed.message || fullContent, parsed);
+        }
+
+        // Persist history (last 50 messages)
+        aiChatState.history.push({
+          role: "assistant",
+          content: fullContent,
+          parsed,
+          timestamp: Date.now(),
+        });
+        persistHistory();
+      } catch (err) {
+        removeThinkingIndicator();
+        aiChatState.isStreaming = false;
+        sendBtn.style.display = "flex";
+        if (stopBtn) stopBtn.style.display = "none";
+        appendErrorMessage("Network error: " + err.message);
+      }
+
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     });
-  }
 
+    // Stop button
+    if (stopBtn) {
+      stopBtn.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ type: "AI_STOP_GENERATION" });
+        aiChatState.isStreaming = false;
+        sendBtn.style.display = "flex";
+        stopBtn.style.display = "none";
+        removeThinkingIndicator();
+        appendAIMessage("Response stopped.", { action: "chat" });
+      });
+    }
+
+    // Listen for streaming chunks and errors from background
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg.type === "AI_STREAM_CHUNK") {
+        updateStreamingMessage(msg.fullContent);
+      }
+      if (msg.type === "AI_STREAM_DONE") {
+        aiChatState.isStreaming = false;
+        sendBtn.style.display = "flex";
+        if (stopBtn) stopBtn.style.display = "none";
+
+        const fullContent = msg.fullContent || "";
+        const parsed = parseAIResponse(fullContent);
+
+        finalizeStreamingMessage(fullContent, parsed);
+
+        aiChatState.history.push({
+          role: "assistant",
+          content: fullContent,
+          parsed,
+          timestamp: Date.now(),
+        });
+        persistHistory();
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+      if (msg.type === "AI_STREAM_ERROR") {
+        aiChatState.isStreaming = false;
+        sendBtn.style.display = "flex";
+        if (stopBtn) stopBtn.style.display = "none";
+        replaceThinkingWithError(msg.error);
+      }
+    });
+
+    // ── Markdown renderer (minimal, no deps) ──
+    function renderMarkdown(text) {
+      const el = document.createElement("div");
+      el.className = "eai-msg-text";
+      el.style.cssText =
+        "font-size: 12px; line-height: 1.6; color: var(--text); word-break: break-word;";
+      // Split into lines and process
+      let html = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*(.+?)\*/g, "<em>$1</em>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+        .replace(/^## (.+)$/gm, "<h3>$1</h3>")
+        .replace(/^[-•] (.+)$/gm, "<li>$1</li>")
+        .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
+        .replace(/\n{2,}/g, "</p><p>")
+        .replace(/\n/g, "<br>");
+      el.innerHTML = "<p>" + html + "</p>";
+      return el;
+    }
+
+    // ── Message rendering helpers ──
+
+    function appendUserMessage(text) {
+      const row = document.createElement("div");
+      row.className = "eai-msg-row";
+      row.style.cssText =
+        "align-self: flex-end; max-width: 88%; margin-bottom: 18px;";
+
+      const bubble = document.createElement("div");
+      bubble.style.cssText =
+        "background: var(--accent-dim); color: var(--text); padding: 8px 12px; border-radius: 12px 12px 4px 12px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; border: 1px solid rgba(79,142,247,0.2);";
+      bubble.textContent = text;
+      row.appendChild(bubble);
+
+      const actions = document.createElement("div");
+      actions.className = "eai-msg-actions";
+      actions.style.right = "0";
+      const copyBtn = makeCopyBtn(text);
+      actions.appendChild(copyBtn);
+      row.appendChild(actions);
+
+      messagesEl.appendChild(row);
+    }
+
+    function makeCopyBtn(text) {
+      const btn = document.createElement("button");
+      btn.className = "eai-action-btn";
+      btn.textContent = "Copy";
+      btn.addEventListener("click", () => {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = "Copied!";
+          btn.classList.add("copied");
+          setTimeout(() => {
+            btn.textContent = "Copy";
+            btn.classList.remove("copied");
+          }, 1500);
+        });
+      });
+      return btn;
+    }
+
+    function appendAIMessage(text, parsed) {
+      const row = document.createElement("div");
+      row.className = "eai-msg-row";
+      row.style.cssText =
+        "align-self: flex-start; max-width: 92%; margin-bottom: 18px;";
+
+      if (
+        parsed &&
+        (parsed.action === "generate" || parsed.action === "improve") &&
+        Array.isArray(parsed.elements)
+      ) {
+        const card = buildGenerateCard(parsed);
+        row.appendChild(card);
+      } else {
+        const bubble = document.createElement("div");
+        bubble.style.cssText =
+          "background: var(--surface); padding: 8px 12px; border-radius: 12px 12px 12px 4px; border: 1px solid var(--border);";
+        bubble.appendChild(renderMarkdown(text));
+        row.appendChild(bubble);
+
+        const actions = document.createElement("div");
+        actions.className = "eai-msg-actions";
+        actions.appendChild(makeCopyBtn(text));
+        row.appendChild(actions);
+      }
+
+      messagesEl.appendChild(row);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function buildGenerateCard(parsed) {
+      const isImprove = parsed.action === "improve";
+      const card = document.createElement("div");
+      card.className = "eai-gen-card";
+
+      // Header
+      const header = document.createElement("div");
+      header.className = "eai-gen-card-header";
+      const badge = document.createElement("span");
+      badge.className = "eai-gen-badge" + (isImprove ? " improve" : "");
+      badge.textContent = isImprove ? "Improved" : "Generated";
+      const count = document.createElement("span");
+      count.className = "eai-gen-count";
+      count.textContent = parsed.elements.length + " elements";
+      header.appendChild(badge);
+      header.appendChild(count);
+      card.appendChild(header);
+
+      // Summary
+      if (parsed.summary) {
+        const summary = document.createElement("div");
+        summary.className = "eai-gen-summary";
+        summary.textContent = parsed.summary;
+        card.appendChild(summary);
+      }
+
+      // Footer with Apply button
+      const footer = document.createElement("div");
+      footer.className = "eai-gen-footer";
+
+      const applyBtn = document.createElement("button");
+      applyBtn.className = "eai-apply-btn";
+      applyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Apply to Canvas`;
+      applyBtn.addEventListener("click", () => {
+        const result = applyElementsToCanvas(parsed.elements);
+        if (result.ok) {
+          applyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied!`;
+          applyBtn.classList.add("applied");
+          applyBtn.disabled = true;
+        } else {
+          applyBtn.textContent = "Error — retry?";
+        }
+      });
+      footer.appendChild(applyBtn);
+      card.appendChild(footer);
+      return card;
+    }
+
+    function showThinkingIndicator() {
+      const wrapper = document.createElement("div");
+      wrapper.id = "excalihub-ai-thinking";
+      wrapper.className = "eai-msg-row";
+      wrapper.style.cssText =
+        "align-self: flex-start; max-width: 90%; margin-bottom: 18px;";
+
+      const bubble = document.createElement("div");
+      bubble.style.cssText =
+        "background: var(--surface); color: var(--muted); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 12px; border: 1px solid var(--border); display: flex; align-items: center; gap: 6px;";
+      bubble.innerHTML = `
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;opacity:.6">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
+          <path d="M6 3v3l2 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+        <span style="font-style:italic">Thinking</span>
+        <span style="display:inline-flex;gap:2px;margin-left:2px;">
+          <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite;"></span>
+          <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite 0.2s;"></span>
+          <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite 0.4s;"></span>
+        </span>`;
+      wrapper.appendChild(bubble);
+      messagesEl.appendChild(wrapper);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function removeThinkingIndicator() {
+      const el = document.getElementById("excalihub-ai-thinking");
+      if (el) el.remove();
+    }
+
+    function replaceThinkingWithError(errorText) {
+      const el = document.getElementById("excalihub-ai-thinking");
+      if (el) {
+        el.id = "";
+        el.innerHTML = "";
+        el.style.alignSelf = "flex-start";
+
+        const card = document.createElement("div");
+        card.style.cssText =
+          "background: var(--error-dim); border: 1px solid #5c1c1c; border-radius: 8px; padding: 8px 10px;";
+
+        const msg = document.createElement("div");
+        msg.style.cssText =
+          "color: var(--error); font-size: 12px; margin-bottom: 8px;";
+        msg.textContent = errorText;
+        card.appendChild(msg);
+
+        const actions = document.createElement("div");
+        actions.style.cssText = "display: flex; gap: 6px;";
+
+        const retryBtn = document.createElement("button");
+        retryBtn.style.cssText =
+          "background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 11px; font-family: 'DM Sans', sans-serif;";
+        retryBtn.textContent = "Retry";
+        retryBtn.addEventListener("click", () => {
+          // Find last user message and resend
+          const lastUser = [...aiChatState.history]
+            .reverse()
+            .find((m) => m.role === "user");
+          if (lastUser) {
+            card.remove();
+            appendUserMessage(lastUser.content);
+            showThinkingIndicator();
+            aiChatState.isStreaming = true;
+            sendBtn.style.display = "none";
+            if (stopBtn) stopBtn.style.display = "flex";
+            resendMessage(lastUser.content);
+          }
+        });
+        actions.appendChild(retryBtn);
+
+        const settingsLink = document.createElement("a");
+        settingsLink.style.cssText =
+          "color: var(--accent); font-size: 11px; cursor: pointer; text-decoration: none; display: flex; align-items: center;";
+        settingsLink.textContent = "Check AI Settings";
+        settingsLink.addEventListener("click", () => {
+          chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+        });
+        actions.appendChild(settingsLink);
+
+        card.appendChild(actions);
+        el.appendChild(card);
+        return;
+      }
+      // Fallback: append new error message
+      appendErrorMessage(errorText);
+    }
+
+    function appendErrorMessage(errorText) {
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
+
+      const card = document.createElement("div");
+      card.style.cssText =
+        "background: var(--error-dim); border: 1px solid #5c1c1c; border-radius: 8px; padding: 8px 10px;";
+
+      const msg = document.createElement("div");
+      msg.style.cssText =
+        "color: var(--error); font-size: 12px; margin-bottom: 8px;";
+      msg.textContent = errorText;
+      card.appendChild(msg);
+
+      const actions = document.createElement("div");
+      actions.style.cssText = "display: flex; gap: 6px;";
+
+      const retryBtn = document.createElement("button");
+      retryBtn.style.cssText =
+        "background: transparent; border: 1px solid var(--border); color: var(--muted); border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 11px; font-family: 'DM Sans', sans-serif;";
+      retryBtn.textContent = "Retry";
+      retryBtn.addEventListener("click", () => {
+        const lastUser = [...aiChatState.history]
+          .reverse()
+          .find((m) => m.role === "user");
+        if (lastUser) {
+          card.closest('[style*="align-self"]').remove();
+          appendUserMessage(lastUser.content);
+          showThinkingIndicator();
+          aiChatState.isStreaming = true;
+          sendBtn.style.display = "none";
+          if (stopBtn) stopBtn.style.display = "flex";
+          resendMessage(lastUser.content);
+        }
+      });
+      actions.appendChild(retryBtn);
+
+      const settingsLink = document.createElement("a");
+      settingsLink.style.cssText =
+        "color: var(--accent); font-size: 11px; cursor: pointer; text-decoration: none; display: flex; align-items: center;";
+      settingsLink.textContent = "Check AI Settings";
+      settingsLink.addEventListener("click", () => {
+        chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+      });
+      actions.appendChild(settingsLink);
+
+      card.appendChild(actions);
+      wrapper.appendChild(card);
+      messagesEl.appendChild(wrapper);
+    }
+
+    // Streaming message placeholder
+    function updateStreamingMessage(content) {
+      let bubble = document.getElementById("excalihub-ai-stream-bubble");
+      if (!bubble) {
+        const thinking = document.getElementById("excalihub-ai-thinking");
+        if (thinking) {
+          thinking.id = "excalihub-ai-streaming";
+          thinking.className = "eai-msg-row";
+          thinking.innerHTML = "";
+          const b = document.createElement("div");
+          b.id = "excalihub-ai-stream-bubble";
+          b.style.cssText =
+            "background: var(--surface); padding: 8px 12px; border-radius: 12px 12px 12px 4px; border: 1px solid var(--border);";
+          thinking.appendChild(b);
+          bubble = b;
+        }
+      }
+      if (bubble) {
+        // Show streamed content — plain text while streaming
+        bubble.innerHTML = "";
+        const textNode = document.createElement("span");
+        textNode.style.cssText =
+          "font-size: 12px; line-height: 1.6; color: var(--text); white-space: pre-wrap; word-break: break-word;";
+        textNode.textContent = content;
+        bubble.appendChild(textNode);
+        const cursor = document.createElement("span");
+        cursor.className = "eai-cursor";
+        bubble.appendChild(cursor);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    }
+
+    function finalizeStreamingMessage(fullContent, parsed) {
+      const streaming = document.getElementById("excalihub-ai-streaming");
+      if (streaming) {
+        streaming.id = "";
+        streaming.innerHTML = "";
+        streaming.style.cssText =
+          "align-self: flex-start; max-width: 92%; margin-bottom: 18px;";
+      }
+
+      if (parsed.action === "generate" || parsed.action === "improve") {
+        const streamBubble = document.getElementById(
+          "excalihub-ai-stream-bubble",
+        );
+        const wrapper = streamBubble?.parentElement || streaming;
+        if (wrapper) {
+          wrapper.innerHTML = "";
+          wrapper.appendChild(buildGenerateCard(parsed));
+          return;
+        }
+      }
+
+      // Plain text / analyze — replace with rendered markdown
+      const wrapper =
+        document.getElementById("excalihub-ai-stream-bubble")?.parentElement ||
+        streaming;
+      if (wrapper) {
+        wrapper.innerHTML = "";
+        const text =
+          parsed.action === "analyze"
+            ? parsed.analysis || fullContent
+            : parsed.message || fullContent;
+        const bubble = document.createElement("div");
+        bubble.style.cssText =
+          "background: var(--surface); padding: 8px 12px; border-radius: 12px 12px 12px 4px; border: 1px solid var(--border);";
+        bubble.appendChild(renderMarkdown(text));
+        wrapper.appendChild(bubble);
+        const actions = document.createElement("div");
+        actions.className = "eai-msg-actions";
+        actions.appendChild(makeCopyBtn(text));
+        wrapper.appendChild(actions);
+      }
+    }
+
+    async function resendMessage(text) {
+      const canvasContext = aiChatState.contextIncluded
+        ? getExcalidrawScene().scene
+        : null;
+
+      try {
+        const response = await chrome.runtime.sendMessage({
+          type: "AI_CHAT",
+          prompt: text,
+          canvasContext,
+          history: aiChatState.history.filter((m) => m.role !== "system"),
+        });
+
+        removeThinkingIndicator();
+
+        aiChatState.isStreaming = false;
+        sendBtn.style.display = "flex";
+        if (stopBtn) stopBtn.style.display = "none";
+
+        if (response?.error) {
+          appendErrorMessage(response.error);
+          return;
+        }
+
+        const fullContent = response?.content || "";
+        const parsed = parseAIResponse(fullContent);
+
+        if (parsed.action === "generate" || parsed.action === "improve") {
+          appendAIMessage(parsed.summary || fullContent, parsed);
+        } else {
+          appendAIMessage(
+            parsed.message || parsed.analysis || fullContent,
+            parsed,
+          );
+        }
+
+        aiChatState.history.push({
+          role: "assistant",
+          content: fullContent,
+          parsed,
+          timestamp: Date.now(),
+        });
+        persistHistory();
+      } catch (err) {
+        removeThinkingIndicator();
+        aiChatState.isStreaming = false;
+        sendBtn.style.display = "flex";
+        if (stopBtn) stopBtn.style.display = "none";
+        appendErrorMessage("Network error: " + err.message);
+      }
+
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function persistHistory() {
+      try {
+        await chrome.storage.local.set({
+          aiConversationHistory: aiChatState.history.slice(-50),
+        });
+      } catch (err) {
+        console.error("Failed to persist history:", err);
+      }
+    }
+
+    // ── Suggested prompts on empty state ──
+    const SUGGESTIONS = [
+      "Build an org chart showing a school role structure",
+      "Draw a flowchart for a student registration process",
+      "Analyze my current diagram and suggest improvements",
+      "Create a system architecture diagram for a web app",
+    ];
+
+    function renderSuggestedPrompts() {
+      const container = document.createElement("div");
+      container.className = "eai-suggestions";
+      const title = document.createElement("div");
+      title.className = "eai-suggestions-title";
+      title.textContent = "Try asking…";
+      container.appendChild(title);
+      SUGGESTIONS.forEach((s) => {
+        const chip = document.createElement("button");
+        chip.className = "eai-suggestion-chip";
+        chip.textContent = s;
+        chip.addEventListener("click", () => {
+          input.value = s;
+          input.style.height = "auto";
+          input.style.height = Math.min(input.scrollHeight, 80) + "px";
+          input.focus();
+          updateCharCounter();
+        });
+        container.appendChild(chip);
+      });
+      messagesEl.appendChild(container);
+    }
+
+    // ── Char counter ──
+    const charCounterEl = document.createElement("div");
+    charCounterEl.className = "eai-char-counter";
+    charCounterEl.style.cssText =
+      "font-size:10px;color:var(--muted);text-align:right;padding:2px 2px 0;";
+    input.parentElement.after(charCounterEl);
+
+    function updateCharCounter() {
+      const len = input.value.length;
+      charCounterEl.textContent = len > 200 ? `${len} chars` : "";
+      charCounterEl.classList.toggle("warn", len > 800);
+    }
+    input.addEventListener("input", updateCharCounter);
+  } // end initSidebarAIChat
   // Show toast notification
   function showToast(msg, type = "success") {
     const existing = document.querySelector(".toast-notification");
@@ -1465,7 +2364,13 @@ function injectSidebar() {
       } else if (currentSortBy === "size") {
         return modifier * (a.size - b.size);
       } else if (currentSortBy === "date") {
-        return modifier * a.name.localeCompare(b.name);
+        // Extract date from filename (format: name_YYYY-MM-DD.excalidraw)
+        const extractDate = (name) => {
+          const match = name.match(/(\d{4}-\d{2}-\d{2})/);
+          if (match) return new Date(match[1]).getTime();
+          return 0; // Files without dates sort first
+        };
+        return modifier * (extractDate(a.name) - extractDate(b.name));
       }
       return 0;
     });
@@ -2303,6 +3208,12 @@ function injectSidebar() {
 // ─── Message Listener ────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "APPLY_ELEMENTS") {
+    const result = applyElementsToCanvas(msg.elements || []);
+    sendResponse(result);
+    return true;
+  }
+
   if (msg.type === "GET_SCENE") {
     sendResponse(getExcalidrawScene());
   }
@@ -2331,100 +3242,71 @@ let aiChatState = {
   history: [],
   isStreaming: false,
   contextIncluded: true,
+  floatingInitialized: false,
 };
 
 async function injectAIChat() {
   if (document.getElementById("excalihub-ai-float")) return;
 
-  const settings = await chrome.runtime.sendMessage({ type: "AI_GET_SETTINGS" });
+  const settings = await chrome.runtime.sendMessage({
+    type: "AI_GET_SETTINGS",
+  });
   if (!settings?.ok || !settings.settings.hasApiKey) return;
 
-  const savedHistory = await chrome.runtime.sendMessage({ type: "AI_GET_HISTORY" });
+  // Load saved history
+  const savedHistory = await chrome.runtime.sendMessage({
+    type: "AI_GET_HISTORY",
+  });
   if (savedHistory?.ok) aiChatState.history = savedHistory.history || [];
 
   const aiFloat = document.createElement("div");
   aiFloat.id = "excalihub-ai-float";
   aiFloat.innerHTML = `
     <div id="excalihub-ai-trigger" style="
-      position: fixed;
-      bottom: 24px;
-      right: 64px;
-      width: 44px;
-      height: 44px;
-      background: linear-gradient(135deg, #7c3aed, #4f8ef7);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(79, 142, 247, 0.3);
-      z-index: 999999;
+      position: fixed; bottom: 24px; right: 64px; width: 44px; height: 44px;
+      background: linear-gradient(135deg, #7c3aed, #4f8ef7); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      box-shadow: 0 4px 16px rgba(79, 142, 247, 0.3); z-index: 999999;
       transition: transform 0.2s, box-shadow 0.2s;
     " title="ExcaliHub AI Chat">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-        <path d="M2 17l10 5 10-5"/>
-        <path d="M2 12l10 5 10-5"/>
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
       </svg>
     </div>
 
     <div id="excalihub-ai-panel" style="
-      position: fixed;
-      bottom: 80px;
-      right: 64px;
-      width: 380px;
-      height: 500px;
-      background: #0d0f11;
-      border: 1px solid #252b33;
-      border-radius: 12px;
-      display: none;
-      flex-direction: column;
-      z-index: 1000000;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-      font-family: 'DM Sans', -apple-system, sans-serif;
-      overflow: hidden;
-      resize: both;
-      min-width: 300px;
-      min-height: 400px;
+      position: fixed; bottom: 80px; right: 64px; width: 380px; height: 500px;
+      background: var(--bg, #0d0f11); border: 1px solid var(--border, #252b33);
+      border-radius: 12px; display: none; flex-direction: column; z-index: 1000000;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5); font-family: 'DM Sans', sans-serif;
+      overflow: hidden; resize: both; min-width: 300px; min-height: 400px;
     ">
       <div id="excalihub-ai-header" style="
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
-        background: #161a1f;
-        border-bottom: 1px solid #252b33;
-        cursor: move;
-        user-select: none;
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 16px; background: var(--surface, #161a1f); border-bottom: 1px solid var(--border, #252b33);
+        cursor: move; user-select: none;
       ">
         <div style="display: flex; align-items: center; gap: 8px;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-            <path d="M2 17l10 5 10-5"/>
-            <path d="M2 12l10 5 10-5"/>
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
           </svg>
-          <span style="color: #e8edf2; font-size: 13px; font-weight: 600;">AI Assistant</span>
+          <span style="color: var(--text, #e8edf2); font-size: 13px; font-weight: 600;">AI Assistant</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
           <button id="excalihub-ai-context-toggle" title="Include canvas context" style="
-            background: #1a2a1a;
-            border: 1px solid #2d5a2d;
-            color: #4ade80;
-            border-radius: 4px;
-            padding: 3px 8px;
-            font-size: 11px;
-            cursor: pointer;
-            font-family: 'DM Sans', sans-serif;
+            background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 4px;
+            padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+            transition: all 0.15s;
           ">Context: ON</button>
           <button id="excalihub-ai-clear" title="New conversation" style="
-            background: none; border: none; color: #6b7685; cursor: pointer; padding: 4px; display: flex; align-items: center;
+            background: none; border: none; color: var(--muted, #6b7685); cursor: pointer; padding: 4px; display: flex; align-items: center; border-radius: 4px;
           ">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M2 4h10M5 4V2.5a1 1 0 011-1h2a1 1 0 011 1V4M11 4v7.5a1 1 0 01-1 1H4a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
           <button id="excalihub-ai-close" style="
-            background: none; border: none; color: #6b7685; cursor: pointer; padding: 4px; display: flex; align-items: center;
+            background: none; border: none; color: var(--muted, #6b7685); cursor: pointer; padding: 4px; display: flex; align-items: center;
           ">
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -2436,23 +3318,22 @@ async function injectAIChat() {
       <div id="excalihub-ai-messages" style="
         flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
       ">
-        <div style="text-align: center; color: #6b7685; font-size: 12px; padding: 20px;">
+        <div style="text-align: center; color: var(--muted, #6b7685); font-size: 12px; padding: 20px;">
           Ask me to generate a diagram, analyze your drawing, or suggest improvements.
         </div>
       </div>
 
       <div id="excalihub-ai-input-area" style="
-        display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #252b33; background: #161a1f;
+        display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border, #252b33); background: var(--surface, #161a1f);
       ">
         <textarea id="excalihub-ai-input" placeholder="Describe a diagram or ask a question..." rows="1" style="
-          flex: 1; background: #0d0f11; border: 1px solid #252b33; color: #e8edf2; border-radius: 8px;
-          padding: 8px 12px; font-size: 13px; outline: none; resize: none; font-family: 'DM Sans', sans-serif;
-          max-height: 100px; line-height: 1.4;
+          flex: 1; background: var(--bg, #0d0f11); border: 1px solid var(--border, #252b33); color: var(--text, #e8edf2);
+          border-radius: 8px; padding: 8px 12px; font-size: 13px; outline: none; resize: none;
+          font-family: 'DM Sans', sans-serif; max-height: 100px; line-height: 1.4; transition: border-color 0.15s;
         "></textarea>
         <button id="excalihub-ai-send" style="
           background: linear-gradient(135deg, #7c3aed, #4f8ef7); border: none; border-radius: 8px;
-          padding: 0 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
-          transition: opacity 0.15s;
+          padding: 0 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.15s;
         " title="Send">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-6 12V8H2z" fill="white"/></svg>
         </button>
@@ -2460,7 +3341,7 @@ async function injectAIChat() {
           background: #5c1c1c; border: 1px solid #f76f6f; border-radius: 8px; padding: 0 14px;
           cursor: pointer; display: none; align-items: center; justify-content: center;
           color: #f76f6f; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;
-        " title="Stop">Stop</button>
+        ">Stop</button>
       </div>
     </div>
   `;
@@ -2478,6 +3359,7 @@ async function injectAIChat() {
   const contextToggle = document.getElementById("excalihub-ai-context-toggle");
   const header = document.getElementById("excalihub-ai-header");
 
+  // Trigger button hover effects
   trigger.addEventListener("mouseenter", () => {
     trigger.style.transform = "scale(1.1)";
     trigger.style.boxShadow = "0 6px 24px rgba(79, 142, 247, 0.4)";
@@ -2491,7 +3373,7 @@ async function injectAIChat() {
     panel.style.display = "flex";
     trigger.style.display = "none";
     input.focus();
-    renderHistory();
+    renderFloatingHistory();
   });
 
   closeBtn.addEventListener("click", () => {
@@ -2499,7 +3381,10 @@ async function injectAIChat() {
     trigger.style.display = "flex";
   });
 
-  let isDragging = false, dragOffX = 0, dragOffY = 0;
+  // Draggable panel
+  let isDragging = false,
+    dragOffX = 0,
+    dragOffY = 0;
   header.addEventListener("mousedown", (e) => {
     if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
     isDragging = true;
@@ -2519,14 +3404,24 @@ async function injectAIChat() {
     panel.style.transition = "";
   });
 
+  // Context toggle
   contextToggle.addEventListener("click", () => {
     aiChatState.contextIncluded = !aiChatState.contextIncluded;
-    contextToggle.textContent = aiChatState.contextIncluded ? "Context: ON" : "Context: OFF";
-    contextToggle.style.background = aiChatState.contextIncluded ? "#1a2a1a" : "#0d0f11";
-    contextToggle.style.borderColor = aiChatState.contextIncluded ? "#2d5a2d" : "#252b33";
-    contextToggle.style.color = aiChatState.contextIncluded ? "#4ade80" : "#6b7685";
+    contextToggle.textContent = aiChatState.contextIncluded
+      ? "Context: ON"
+      : "Context: OFF";
+    contextToggle.style.background = aiChatState.contextIncluded
+      ? "#1a2a1a"
+      : "var(--bg, #0d0f11)";
+    contextToggle.style.borderColor = aiChatState.contextIncluded
+      ? "#2d5a2d"
+      : "var(--border, #252b33)";
+    contextToggle.style.color = aiChatState.contextIncluded
+      ? "#4ade80"
+      : "var(--muted, #6b7685)";
   });
 
+  // Input auto-resize
   input.addEventListener("input", () => {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 100) + "px";
@@ -2535,103 +3430,37 @@ async function injectAIChat() {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendBtn.click();
+      handleFloatingSend();
     }
   });
 
+  input.addEventListener("focus", () => {
+    input.style.borderColor = "#4f8ef7";
+  });
+  input.addEventListener("blur", () => {
+    input.style.borderColor = "var(--border, #252b33)";
+  });
+
+  // Clear conversation
   clearBtn.addEventListener("click", async () => {
     aiChatState.history = [];
-    await chrome.runtime.sendMessage({ type: "AI_CLEAR_HISTORY" });
-    messagesEl.innerHTML = `<div style="text-align: center; color: #6b7685; font-size: 12px; padding: 20px;">Conversation cleared. Ask me anything!</div>`;
+    await chrome.runtime
+      .sendMessage({ type: "AI_CLEAR_HISTORY" })
+      .catch(() => {});
+    await chrome.storage.local.remove("aiConversationHistory").catch(() => {});
+    messagesEl.innerHTML = `<div style="text-align: center; color: var(--muted, #6b7685); font-size: 12px; padding: 20px;">Conversation cleared. Ask me anything!</div>`;
+  });
+  clearBtn.addEventListener("mouseenter", () => {
+    clearBtn.style.color = "var(--text, #e8edf2)";
+    clearBtn.style.background = "var(--surface, #161a1f)";
+  });
+  clearBtn.addEventListener("mouseleave", () => {
+    clearBtn.style.color = "var(--muted, #6b7685)";
+    clearBtn.style.background = "none";
   });
 
-  function renderHistory() {
-    if (aiChatState.history.length === 0) return;
-    messagesEl.innerHTML = "";
-    for (const msg of aiChatState.history) {
-      if (msg.role === "user") {
-        appendUserMessage(msg.content);
-      } else {
-        appendAIMessage(msg.content, msg.parsed);
-      }
-    }
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  function appendUserMessage(text) {
-    const div = document.createElement("div");
-    div.style.cssText = "align-self: flex-end; max-width: 80%; background: #1e3a5f; color: #e8edf2; padding: 8px 12px; border-radius: 12px 12px 4px 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;";
-    div.textContent = text;
-    messagesEl.appendChild(div);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  function appendAIMessage(text, parsed) {
-    const wrapper = document.createElement("div");
-    wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
-
-    if (parsed && (parsed.action === "generate" || parsed.action === "improve")) {
-      const card = document.createElement("div");
-      card.style.cssText = "background: #161a1f; border: 1px solid #252b33; border-radius: 10px; overflow: hidden;";
-
-      const label = document.createElement("div");
-      label.style.cssText = "padding: 8px 12px; font-size: 11px; color: #6b7685; border-bottom: 1px solid #252b33;";
-      label.textContent = parsed.action === "generate" ? "Generated diagram" : "Improved diagram";
-      if (parsed.summary) label.textContent += " — " + parsed.summary;
-      card.appendChild(label);
-
-      const actions = document.createElement("div");
-      actions.style.cssText = "padding: 10px 12px; display: flex; gap: 8px;";
-
-      const applyBtn = document.createElement("button");
-      applyBtn.style.cssText = "flex: 1; background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;";
-      applyBtn.textContent = "Apply to Canvas";
-      applyBtn.addEventListener("click", () => {
-        const result = applyElementsToCanvas(parsed.elements);
-        if (result.ok) {
-          applyBtn.textContent = "Applied!";
-          applyBtn.style.color = "#6b7685";
-          applyBtn.style.borderColor = "#252b33";
-          applyBtn.style.background = "#0d0f11";
-          applyBtn.disabled = true;
-        }
-      });
-      actions.appendChild(applyBtn);
-
-      const countLabel = document.createElement("span");
-      countLabel.style.cssText = "display: flex; align-items: center; font-size: 11px; color: #6b7685;";
-      countLabel.textContent = parsed.elements.length + " elements";
-      actions.appendChild(countLabel);
-
-      card.appendChild(actions);
-      wrapper.appendChild(card);
-    } else {
-      const bubble = document.createElement("div");
-      bubble.style.cssText = "background: #161a1f; color: #e8edf2; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid #252b33; white-space: pre-wrap; word-break: break-word;";
-      bubble.textContent = text;
-      wrapper.appendChild(bubble);
-    }
-
-    messagesEl.appendChild(wrapper);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  function appendStreamingMessage() {
-    const wrapper = document.createElement("div");
-    wrapper.id = "excalihub-ai-streaming";
-    wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
-
-    const bubble = document.createElement("div");
-    bubble.style.cssText = "background: #161a1f; color: #e8edf2; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid #252b33; white-space: pre-wrap; word-break: break-word;";
-    bubble.id = "excalihub-ai-stream-bubble";
-    bubble.innerHTML = '<span style="color: #6b7685;">Thinking...</span>';
-
-    wrapper.appendChild(bubble);
-    messagesEl.appendChild(wrapper);
-    messagesEl.scrollTop = messagesEl.scrollHeight;
-  }
-
-  sendBtn.addEventListener("click", async () => {
+  // Send handler
+  async function handleFloatingSend() {
     const text = input.value.trim();
     if (!text || aiChatState.isStreaming) return;
 
@@ -2642,12 +3471,17 @@ async function injectAIChat() {
     sendBtn.style.display = "none";
     stopBtn.style.display = "flex";
 
-    appendUserMessage(text);
-    appendStreamingMessage();
+    appendFloatingUserMessage(text);
+    appendFloatingThinking();
 
-    const canvasContext = aiChatState.contextIncluded ? getExcalidrawScene().scene : null;
-
-    aiChatState.history.push({ role: "user", content: text, timestamp: Date.now() });
+    const canvasContext = aiChatState.contextIncluded
+      ? getExcalidrawScene().scene
+      : null;
+    aiChatState.history.push({
+      role: "user",
+      content: text,
+      timestamp: Date.now(),
+    });
 
     const response = await chrome.runtime.sendMessage({
       type: "AI_CHAT",
@@ -2665,21 +3499,23 @@ async function injectAIChat() {
       if (streamEl) {
         const bubble = streamEl.querySelector("div");
         bubble.textContent = "Error: " + response.error;
-        bubble.style.color = "#f76f6f";
+        bubble.style.color = "var(--error, #f76f6f)";
         bubble.style.borderColor = "#5c1c1c";
         streamEl.id = "";
       }
       return;
     }
 
-    const streamBubble = document.getElementById("excalihub-ai-stream-bubble");
     const fullContent = response?.content || "";
-
     const parsed = parseAIResponse(fullContent);
-    const displayText = parsed.action === "chat" || parsed.action === "analyze"
-      ? (parsed.message || parsed.analysis || fullContent)
-      : parsed.summary || fullContent;
 
+    const displayText =
+      parsed.action === "chat" || parsed.action === "analyze"
+        ? parsed.message || parsed.analysis || fullContent
+        : parsed.summary || fullContent;
+
+    // Convert streaming element to final message
+    const streamBubble = document.getElementById("excalihub-ai-stream-bubble");
     if (streamBubble) streamBubble.textContent = displayText;
     const streamEl = document.getElementById("excalihub-ai-streaming");
     if (streamEl) streamEl.id = "";
@@ -2691,18 +3527,23 @@ async function injectAIChat() {
       timestamp: Date.now(),
     });
 
+    // If generate/improve, convert the streaming message to a card
     if (parsed.action === "generate" || parsed.action === "improve") {
       const lastMsg = messagesEl.lastElementChild;
       if (lastMsg) lastMsg.remove();
-      appendAIMessage(displayText, parsed);
+      appendFloatingAIMessage(displayText, parsed);
     }
 
-    chrome.storage.local.set({
-      aiConversationHistory: aiChatState.history.slice(-50),
-    }).catch(() => {});
+    chrome.storage.local
+      .set({
+        aiConversationHistory: aiChatState.history.slice(-50),
+      })
+      .catch(() => {});
 
     messagesEl.scrollTop = messagesEl.scrollHeight;
-  });
+  }
+
+  sendBtn.addEventListener("click", handleFloatingSend);
 
   stopBtn.addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "AI_STOP_GENERATION" });
@@ -2711,6 +3552,7 @@ async function injectAIChat() {
     stopBtn.style.display = "none";
   });
 
+  // Streaming listeners
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === "AI_STREAM_CHUNK") {
       const bubble = document.getElementById("excalihub-ai-stream-bubble");
@@ -2723,7 +3565,7 @@ async function injectAIChat() {
       const bubble = document.getElementById("excalihub-ai-stream-bubble");
       if (bubble) {
         bubble.textContent = "Error: " + msg.error;
-        bubble.style.color = "#f76f6f";
+        bubble.style.color = "var(--error, #f76f6f)";
       }
       aiChatState.isStreaming = false;
       sendBtn.style.display = "flex";
@@ -2731,15 +3573,116 @@ async function injectAIChat() {
     }
   });
 
-  const aiSettings = await chrome.runtime.sendMessage({ type: "AI_GET_SETTINGS" });
+  function appendFloatingUserMessage(text) {
+    const div = document.createElement("div");
+    div.style.cssText =
+      "align-self: flex-end; max-width: 80%; background: #1e3a5f; color: var(--text, #e8edf2); padding: 8px 12px; border-radius: 12px 12px 4px 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;";
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendFloatingThinking() {
+    const wrapper = document.createElement("div");
+    wrapper.id = "excalihub-ai-streaming";
+    wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
+    const bubble = document.createElement("div");
+    bubble.style.cssText =
+      "background: var(--surface, #161a1f); color: var(--muted, #6b7685); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid var(--border, #252b33); display: flex; align-items: center; gap: 8px;";
+    bubble.innerHTML = `<span>Thinking</span><span style="display:inline-flex;gap:3px;"><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite;"></span><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite 0.2s;"></span><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite 0.4s;"></span></span>`;
+    bubble.id = "excalihub-ai-stream-bubble";
+    wrapper.appendChild(bubble);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendFloatingAIMessage(text, parsed) {
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
+
+    if (
+      parsed &&
+      (parsed.action === "generate" || parsed.action === "improve")
+    ) {
+      const card = document.createElement("div");
+      card.style.cssText =
+        "background: var(--surface, #161a1f); border: 1px solid var(--border, #252b33); border-radius: 10px; overflow: hidden;";
+      const label = document.createElement("div");
+      label.style.cssText =
+        "padding: 8px 12px; font-size: 11px; color: var(--muted, #6b7685); border-bottom: 1px solid var(--border, #252b33);";
+      label.textContent =
+        (parsed.action === "generate" ? "Generated" : "Improved") +
+        " diagram" +
+        (parsed.summary ? " — " + parsed.summary : "");
+      card.appendChild(label);
+
+      const actions = document.createElement("div");
+      actions.style.cssText = "padding: 10px 12px; display: flex; gap: 8px;";
+      const applyBtn = document.createElement("button");
+      applyBtn.style.cssText =
+        "flex: 1; background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;";
+      applyBtn.textContent = "Apply to Canvas";
+      applyBtn.addEventListener("click", () => {
+        const result = applyElementsToCanvas(parsed.elements);
+        if (result.ok) {
+          applyBtn.textContent = "Applied!";
+          applyBtn.style.color = "var(--muted, #6b7685)";
+          applyBtn.style.borderColor = "var(--border, #252b33)";
+          applyBtn.style.background = "var(--bg, #0d0f11)";
+          applyBtn.disabled = true;
+        }
+      });
+      actions.appendChild(applyBtn);
+      const countLabel = document.createElement("span");
+      countLabel.style.cssText =
+        "display: flex; align-items: center; font-size: 11px; color: var(--muted, #6b7685);";
+      countLabel.textContent = parsed.elements.length + " elements";
+      actions.appendChild(countLabel);
+      card.appendChild(actions);
+      wrapper.appendChild(card);
+    } else {
+      const bubble = document.createElement("div");
+      bubble.style.cssText =
+        "background: var(--surface, #161a1f); color: var(--text, #e8edf2); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid var(--border, #252b33); white-space: pre-wrap; word-break: break-word;";
+      bubble.textContent = text;
+      wrapper.appendChild(bubble);
+    }
+
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function renderFloatingHistory() {
+    if (aiChatState.history.length === 0) return;
+    messagesEl.innerHTML = "";
+    for (const msg of aiChatState.history) {
+      if (msg.role === "user") {
+        appendFloatingUserMessage(msg.content);
+      } else if (msg.role === "assistant") {
+        appendFloatingAIMessage(msg.content, msg.parsed);
+      }
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  // Load settings
+  const aiSettings = await chrome.runtime.sendMessage({
+    type: "AI_GET_SETTINGS",
+  });
   if (aiSettings?.ok) {
     aiChatState.contextIncluded = aiSettings.settings.contextMode === "auto";
-    if (contextToggle) {
-      contextToggle.textContent = aiChatState.contextIncluded ? "Context: ON" : "Context: OFF";
-      contextToggle.style.background = aiChatState.contextIncluded ? "#1a2a1a" : "#0d0f11";
-      contextToggle.style.borderColor = aiChatState.contextIncluded ? "#2d5a2d" : "#252b33";
-      contextToggle.style.color = aiChatState.contextIncluded ? "#4ade80" : "#6b7685";
-    }
+    contextToggle.textContent = aiChatState.contextIncluded
+      ? "Context: ON"
+      : "Context: OFF";
+    contextToggle.style.background = aiChatState.contextIncluded
+      ? "#1a2a1a"
+      : "var(--bg, #0d0f11)";
+    contextToggle.style.borderColor = aiChatState.contextIncluded
+      ? "#2d5a2d"
+      : "var(--border, #252b33)";
+    contextToggle.style.color = aiChatState.contextIncluded
+      ? "#4ade80"
+      : "var(--muted, #6b7685)";
   }
 }
 

@@ -289,6 +289,159 @@
                 line-height: 1.6;
                 padding: 8px 0;
             }
+
+            /* ── AI Chat Panel ── */
+            .ai-chat-panel {
+                margin-top: 16px;
+                padding-top: 16px;
+                border-top: 1px solid var(--border);
+            }
+            .ai-chat-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 8px;
+            }
+            .ai-chat-header span {
+                font-size: 12px;
+                font-weight: 600;
+                color: var(--muted);
+            }
+            .ai-chat-header-actions {
+                display: flex;
+                gap: 4px;
+            }
+            .ai-chat-messages {
+                max-height: 200px;
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                padding: 8px;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                margin-bottom: 8px;
+            }
+            .ai-chat-messages:empty {
+                display: none;
+            }
+            .ai-chat-msg {
+                padding: 6px 10px;
+                border-radius: 8px;
+                font-size: 11px;
+                line-height: 1.5;
+                white-space: pre-wrap;
+                word-break: break-word;
+                max-width: 90%;
+            }
+            .ai-chat-msg.user {
+                align-self: flex-end;
+                background: var(--accent-dim);
+                color: var(--accent);
+                border-radius: 8px 8px 2px 8px;
+            }
+            .ai-chat-msg.assistant {
+                align-self: flex-start;
+                background: var(--bg);
+                color: var(--text);
+                border: 1px solid var(--border);
+                border-radius: 8px 8px 8px 2px;
+            }
+            .ai-chat-msg.error {
+                align-self: flex-start;
+                background: var(--error-dim);
+                color: var(--error);
+                border: 1px solid #5c1c1c;
+            }
+            .ai-chat-msg.thinking {
+                align-self: flex-start;
+                background: var(--surface);
+                color: var(--muted);
+                border: 1px solid var(--border);
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .ai-chat-input-row {
+                display: flex;
+                gap: 6px;
+                align-items: flex-end;
+            }
+            .ai-chat-input-row textarea {
+                flex: 1;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                color: var(--text);
+                border-radius: 7px;
+                padding: 7px 10px;
+                font-size: 11px;
+                font-family: "DM Sans", sans-serif;
+                outline: none;
+                resize: none;
+                max-height: 60px;
+                line-height: 1.4;
+                transition: border-color 0.15s;
+            }
+            .ai-chat-input-row textarea:focus {
+                border-color: var(--accent);
+            }
+            .ai-chat-send-btn {
+                background: linear-gradient(135deg, #7c3aed, #4f8ef7);
+                border: none;
+                border-radius: 7px;
+                width: 32px;
+                height: 32px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: opacity 0.15s;
+                flex-shrink: 0;
+            }
+            .ai-chat-send-btn:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+            .ai-chat-controls {
+                display: flex;
+                gap: 6px;
+                margin-bottom: 8px;
+            }
+            .ai-chat-ctrl-btn {
+                background: var(--bg);
+                border: 1px solid var(--border);
+                color: var(--muted);
+                border-radius: 5px;
+                padding: 3px 8px;
+                font-size: 10px;
+                cursor: pointer;
+                font-family: "DM Sans", sans-serif;
+                transition: all 0.15s;
+            }
+            .ai-chat-ctrl-btn.active {
+                background: var(--success-dim);
+                border-color: #2d5a2d;
+                color: var(--success);
+            }
+            .ai-chat-ctrl-btn:hover {
+                color: var(--text);
+                border-color: var(--accent);
+            }
+
+            /* ── Thinking animation ── */
+            @keyframes thinkingBounce {
+                0%,
+                60%,
+                100% {
+                    transform: translateY(0);
+                    opacity: 0.4;
+                }
+                30% {
+                    transform: translateY(-4px);
+                    opacity: 1;
+                }
+            }
         </style>
     </head>
     <body>
@@ -466,18 +619,140 @@
                     Save to GitHub
                 </button>
                 <div class="toast" id="toast"></div>
-                <div id="ai-quick-actions" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #252b33;">
-                  <div style="font-size: 12px; font-weight: 600; color: #6b7685; margin-bottom: 8px;">AI Quick Actions</div>
-                  <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                    <button id="ai-quick-generate" style="flex: 1; min-width: 120px; background: #161a1f; border: 1px solid #252b33; color: #e8edf2; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; display: flex; align-items: center; gap: 6px; justify-content: center;">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg>
-                      Generate
-                    </button>
-                    <button id="ai-quick-analyze" style="flex: 1; min-width: 120px; background: #161a1f; border: 1px solid #252b33; color: #e8edf2; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; font-family: 'DM Sans', sans-serif; display: flex; align-items: center; gap: 6px; justify-content: center;">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                      Analyze
-                    </button>
-                  </div>
+
+                <!-- AI Chat Panel -->
+                <div
+                    id="ai-chat-section"
+                    class="ai-chat-panel"
+                    style="display: none"
+                >
+                    <div class="ai-chat-header">
+                        <span>AI Assistant</span>
+                        <div class="ai-chat-header-actions">
+                            <button
+                                id="ai-chat-clear-btn"
+                                class="icon-btn"
+                                title="Clear conversation"
+                                style="padding: 2px 6px"
+                            >
+                                <svg
+                                    width="12"
+                                    height="12"
+                                    viewBox="0 0 14 14"
+                                    fill="none"
+                                >
+                                    <path
+                                        d="M2 4h10M5 4V2.5a1 1 0 011-1h2a1 1 0 011 1V4M11 4v7.5a1 1 0 01-1 1H4a1 1 0 01-1-1V4"
+                                        stroke="currentColor"
+                                        stroke-width="1.2"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="ai-chat-controls">
+                        <button
+                            id="ai-chat-context-btn"
+                            class="ai-chat-ctrl-btn active"
+                            title="Include canvas context"
+                        >
+                            Context: ON
+                        </button>
+                    </div>
+                    <div id="ai-chat-messages" class="ai-chat-messages"></div>
+                    <div class="ai-chat-input-row">
+                        <textarea
+                            id="ai-chat-input"
+                            placeholder="Ask AI to generate, analyze, or improve..."
+                            rows="1"
+                        ></textarea>
+                        <button
+                            id="ai-chat-send"
+                            class="ai-chat-send-btn"
+                            title="Send"
+                        >
+                            <svg
+                                width="14"
+                                height="14"
+                                viewBox="0 0 16 16"
+                                fill="none"
+                            >
+                                <path d="M2 8l12-6-6 12V8H2z" fill="white" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div id="ai-quick-actions" style="margin-top: 12px">
+                    <div
+                        style="
+                            font-size: 11px;
+                            font-weight: 600;
+                            color: var(--muted);
+                            margin-bottom: 6px;
+                        "
+                    >
+                        Quick Actions
+                    </div>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                        <button
+                            id="ai-quick-generate"
+                            class="ai-chat-ctrl-btn"
+                            style="
+                                flex: 1;
+                                min-width: 100px;
+                                padding: 6px 10px;
+                                font-size: 11px;
+                                display: flex;
+                                align-items: center;
+                                gap: 5px;
+                                justify-content: center;
+                            "
+                        >
+                            <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                                <path d="M2 17l10 5 10-5" />
+                            </svg>
+                            Generate
+                        </button>
+                        <button
+                            id="ai-quick-analyze"
+                            class="ai-chat-ctrl-btn"
+                            style="
+                                flex: 1;
+                                min-width: 100px;
+                                padding: 6px 10px;
+                                font-size: 11px;
+                                display: flex;
+                                align-items: center;
+                                gap: 5px;
+                                justify-content: center;
+                            "
+                        >
+                            <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                            >
+                                <circle cx="11" cy="11" r="8" />
+                                <path d="M21 21l-4.35-4.35" />
+                            </svg>
+                            Analyze
+                        </button>
+                    </div>
                 </div>
             </div>
 

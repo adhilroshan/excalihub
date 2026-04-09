@@ -155,8 +155,10 @@ async function loadFileFromGitHub({ token, owner, repo, path, branch }) {
   }
 
   const data = await resp.json();
-  const content = decodeURIComponent(
-    escape(atob(data.content.replace(/\n/g, ""))),
+  const content = new TextDecoder().decode(
+    Uint8Array.from(atob(data.content.replace(/\n/g, "")), (c) =>
+      c.charCodeAt(0),
+    ),
   );
   return JSON.parse(content);
 }
@@ -292,12 +294,39 @@ async function generateThumbnail(sceneData) {
 // IMPORTANT: The listener must NOT be async. Return true synchronously to keep
 // the message channel open, then call sendResponse inside the async handler.
 
+// Helper: wrap an async handler with a timeout so sendResponse always fires
+function withTimeout(fn, sendResponse, ms = 30000) {
+  const timer = setTimeout(
+    () => sendResponse({ error: "Request timed out" }),
+    ms,
+  );
+  fn()
+    .catch((err) => sendResponse({ error: err.message || String(err) }))
+    .finally(() => clearTimeout(timer));
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // Handle GET_AUTH_STATUS synchronously-ish via promise
   if (msg.type === "GET_AUTH_STATUS") {
-    chrome.storage.local.get(["token", "user"]).then(({ token, user }) => {
-      sendResponse({ authenticated: !!token, user: user ?? null });
-    });
+    chrome.storage.local
+      .get(["token", "user", "tokenTimestamp"])
+      .then(({ token, user, tokenTimestamp }) => {
+        // GitHub device flow tokens expire after ~8h; consider expired after 7h for safety
+        const TOKEN_TTL_MS = 7 * 60 * 60 * 1000;
+        let expired = false;
+        if (
+          token &&
+          tokenTimestamp &&
+          Date.now() - tokenTimestamp > TOKEN_TTL_MS
+        ) {
+          expired = true;
+        }
+        sendResponse({
+          authenticated: !!token && !expired,
+          user: user ?? null,
+          expired,
+        });
+      });
     return true;
   }
 
@@ -321,7 +350,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       })
       .then((token) =>
         getGitHubUser(token).then((user) =>
-          chrome.storage.local.set({ token, user }),
+          chrome.storage.local.set({ token, user, tokenTimestamp: Date.now() }),
         ),
       )
       .catch(() => {}); // UI's waitForAuth timeout handles failure gracefully
@@ -329,7 +358,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "SAVE_SCENE") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
@@ -347,124 +377,121 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         Accept: "application/vnd.github+json",
       };
 
-      fetch(url, { headers })
-        .then((checkResp) => {
-          if (checkResp.ok) {
-            // File exists - return conflict info
-            return checkResp.json().then((existing) => {
-              sendResponse({
-                conflict: true,
-                existingSha: existing.sha,
-                path: filePath,
-                url: existing.html_url,
-              });
-            });
-          } else {
-            // File doesn't exist - save directly
-            return saveToGitHub({
-              token,
-              owner: settings.owner,
-              repo: settings.repo,
-              branch: settings.branch,
-              path: filePath,
-              content: b64,
-              message: `excalihub: save ${fileName}`,
-            }).then((result) =>
-              sendResponse({
-                ok: true,
-                url: result.content.html_url,
-                path: filePath,
-              }),
-            );
-          }
-        })
-        .catch((err) => sendResponse({ error: err.message }));
-    });
+      const checkResp = await fetch(url, { headers });
+      if (checkResp.ok) {
+        const existing = await checkResp.json();
+        sendResponse({
+          conflict: true,
+          existingSha: existing.sha,
+          path: filePath,
+          url: existing.html_url,
+        });
+      } else {
+        const result = await saveToGitHub({
+          token,
+          owner: settings.owner,
+          repo: settings.repo,
+          branch: settings.branch,
+          path: filePath,
+          content: b64,
+          message: `excalihub: save ${fileName}`,
+        });
+        sendResponse({
+          ok: true,
+          url: result.content.html_url,
+          path: filePath,
+        });
+      }
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "LIST_FILES") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
-
-      chrome.storage.sync
-        .get(["owner", "repo", "branch", "savePath"])
-        .then((settings) => {
-          listFilesFromGitHub({
-            token,
-            owner: settings.owner,
-            repo: settings.repo,
-            branch: settings.branch || "main",
-            path: settings.savePath || "drawings/",
-          })
-            .then((files) => sendResponse({ ok: true, files }))
-            .catch((err) => sendResponse({ error: err.message }));
-        });
-    });
+      const settings = await chrome.storage.sync.get([
+        "owner",
+        "repo",
+        "branch",
+        "savePath",
+      ]);
+      const files = await listFilesFromGitHub({
+        token,
+        owner: settings.owner,
+        repo: settings.repo,
+        branch: settings.branch || "main",
+        path: settings.savePath || "drawings/",
+      });
+      sendResponse({ ok: true, files });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "LOAD_FILE") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
-
-      chrome.storage.sync.get(["owner", "repo", "branch"]).then((settings) => {
-        loadFileFromGitHub({
-          token,
-          owner: settings.owner,
-          repo: settings.repo,
-          path: msg.path,
-          branch: settings.branch || "main",
-        })
-          .then((scene) => sendResponse({ ok: true, scene }))
-          .catch((err) => sendResponse({ error: err.message }));
+      const settings = await chrome.storage.sync.get([
+        "owner",
+        "repo",
+        "branch",
+      ]);
+      const scene = await loadFileFromGitHub({
+        token,
+        owner: settings.owner,
+        repo: settings.repo,
+        path: msg.path,
+        branch: settings.branch || "main",
       });
-    });
+      sendResponse({ ok: true, scene });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "DELETE_FILE") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
-
-      chrome.storage.sync.get(["owner", "repo", "branch"]).then((settings) => {
-        deleteFileFromGitHub({
-          token,
-          owner: settings.owner,
-          repo: settings.repo,
-          branch: settings.branch || "main",
-          path: msg.path,
-          sha: msg.sha,
-        })
-          .then((result) => sendResponse({ ok: true, result }))
-          .catch((err) => sendResponse({ error: err.message }));
+      const settings = await chrome.storage.sync.get([
+        "owner",
+        "repo",
+        "branch",
+      ]);
+      const result = await deleteFileFromGitHub({
+        token,
+        owner: settings.owner,
+        repo: settings.repo,
+        branch: settings.branch || "main",
+        path: msg.path,
+        sha: msg.sha,
       });
-    });
+      sendResponse({ ok: true, result });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "OVERWRITE_SCENE") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
-
       const { scene, fileName, settings, existingSha } = msg;
       const jsonStr = JSON.stringify(scene, null, 2);
       const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
       const filePath = `${settings.savePath.replace(/\/$/, "")}/${fileName}`;
-
-      saveToGitHub({
+      const result = await saveToGitHub({
         token,
         owner: settings.owner,
         repo: settings.repo,
@@ -473,30 +500,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         content: b64,
         message: `excalihub: update ${fileName}`,
         existingSha,
-      })
-        .then((result) =>
-          sendResponse({
-            ok: true,
-            url: result.content.html_url,
-            path: filePath,
-          }),
-        )
-        .catch((err) => sendResponse({ error: err.message }));
-    });
+      });
+      sendResponse({ ok: true, url: result.content.html_url, path: filePath });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "IMPORT_FILE") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
-
       const { fileName, content, settings } = msg;
       const filePath = `${settings.savePath.replace(/\/$/, "")}/${fileName}`;
-
-      saveToGitHub({
+      const result = await saveToGitHub({
         token,
         owner: settings.owner,
         repo: settings.repo,
@@ -504,223 +523,209 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         path: filePath,
         content,
         message: `excalihub: import ${fileName}`,
-      })
-        .then((result) =>
-          sendResponse({
-            ok: true,
-            url: result.content.html_url,
-            path: filePath,
-          }),
-        )
-        .catch((err) => sendResponse({ error: err.message }));
-    });
+      });
+      sendResponse({ ok: true, url: result.content.html_url, path: filePath });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "GET_FILE_HISTORY") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
-
-      chrome.storage.sync.get(["owner", "repo", "branch"]).then((settings) => {
-        const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/commits?path=${msg.path}&sha=${settings.branch || "main"}&per_page=20`;
-        const headers = {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-        };
-
-        fetch(url, { headers })
-          .then((resp) => resp.json())
-          .then((commits) => {
-            if (!Array.isArray(commits)) {
-              throw new Error("Failed to fetch history");
-            }
-
-            const history = commits.map((commit) => ({
-              sha: commit.sha,
-              date: new Date(commit.commit.author.date).toLocaleString(),
-              message: commit.commit.message,
-            }));
-
-            sendResponse({ ok: true, commits: history });
-          })
-          .catch((err) => sendResponse({ error: err.message }));
-      });
-    });
+      const settings = await chrome.storage.sync.get([
+        "owner",
+        "repo",
+        "branch",
+      ]);
+      const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/commits?path=${msg.path}&sha=${settings.branch || "main"}&per_page=20`;
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      };
+      const resp = await fetch(url, { headers });
+      const commits = await resp.json();
+      if (!Array.isArray(commits)) throw new Error("Failed to fetch history");
+      const history = commits.map((commit) => ({
+        sha: commit.sha,
+        date: new Date(commit.commit.author.date).toLocaleString(),
+        message: commit.commit.message,
+      }));
+      sendResponse({ ok: true, commits: history });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "LOAD_FILE_AT_COMMIT") {
-    chrome.storage.local.get("token").then(({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
-
-      chrome.storage.sync.get(["owner", "repo"]).then((settings) => {
-        const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${msg.path}?ref=${msg.sha}`;
-        const headers = {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-        };
-
-        fetch(url, { headers })
-          .then((resp) => resp.json())
-          .then((data) => {
-            const content = decodeURIComponent(
-              escape(atob(data.content.replace(/\n/g, ""))),
-            );
-            const scene = JSON.parse(content);
-            sendResponse({ ok: true, scene });
-          })
-          .catch((err) => sendResponse({ error: err.message }));
-      });
-    });
+      const settings = await chrome.storage.sync.get(["owner", "repo"]);
+      const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${msg.path}?ref=${msg.sha}`;
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      };
+      const resp = await fetch(url, { headers });
+      const data = await resp.json();
+      const content = new TextDecoder().decode(
+        Uint8Array.from(atob(data.content.replace(/\n/g, "")), (c) =>
+          c.charCodeAt(0),
+        ),
+      );
+      const scene = JSON.parse(content);
+      sendResponse({ ok: true, scene });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "GET_STATISTICS") {
-    chrome.storage.local.get("token").then(async ({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
 
-      try {
-        const settings = await chrome.storage.sync.get([
-          "owner",
-          "repo",
-          "branch",
-          "savePath",
-        ]);
+      const settings = await chrome.storage.sync.get([
+        "owner",
+        "repo",
+        "branch",
+        "savePath",
+      ]);
 
-        const savePath = (settings.savePath || "drawings/").replace(/\/$/, "");
-        const headers = {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github+json",
-        };
+      const savePath = (settings.savePath || "drawings/").replace(/\/$/, "");
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      };
 
-        // Fetch both main folder and autosave folder in parallel
-        const [mainResp, autosaveResp] = await Promise.all([
-          fetch(
-            `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${savePath}?ref=${settings.branch || "main"}`,
-            { headers },
-          ),
-          fetch(
-            `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/_autosave?ref=${settings.branch || "main"}`,
-            { headers },
-          ),
-        ]);
+      // Fetch both main folder and autosave folder in parallel
+      const [mainResp, autosaveResp] = await Promise.all([
+        fetch(
+          `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${savePath}?ref=${settings.branch || "main"}`,
+          { headers },
+        ),
+        fetch(
+          `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/_autosave?ref=${settings.branch || "main"}`,
+          { headers },
+        ),
+      ]);
 
-        let allFiles = [];
+      let allFiles = [];
 
-        if (mainResp.ok) {
-          const mainFiles = await mainResp.json();
-          if (Array.isArray(mainFiles)) {
-            allFiles = allFiles.concat(mainFiles);
-          }
+      if (mainResp.ok) {
+        const mainFiles = await mainResp.json();
+        if (Array.isArray(mainFiles)) {
+          allFiles = allFiles.concat(mainFiles);
         }
-
-        if (autosaveResp.ok) {
-          const autosaveFiles = await autosaveResp.json();
-          if (Array.isArray(autosaveFiles)) {
-            allFiles = allFiles.concat(autosaveFiles);
-          }
-        }
-
-        const excalidrawFiles = allFiles.filter(
-          (f) => f.type === "file" && f.name.endsWith(".excalidraw"),
-        );
-
-        const totalFiles = excalidrawFiles.length;
-        const totalSize = excalidrawFiles.reduce(
-          (sum, f) => sum + (f.size || 0),
-          0,
-        );
-        const averageSize = totalFiles > 0 ? totalSize / totalFiles : 0;
-
-        // Get last modified file across both folders
-        let lastSaved = "Never";
-        if (totalFiles > 0) {
-          const sorted = [...excalidrawFiles].sort((a, b) =>
-            b.name.localeCompare(a.name),
-          );
-          const latest = sorted[0];
-          // Try to extract date from filename
-          const dateMatch = latest.name.match(/(\d{4}-\d{2}-\d{2})/);
-          if (dateMatch) {
-            lastSaved = new Date(dateMatch[1]).toLocaleDateString();
-          }
-        }
-
-        sendResponse({
-          ok: true,
-          stats: {
-            totalFiles,
-            totalSize,
-            averageSize,
-            lastSaved,
-          },
-        });
-      } catch (err) {
-        sendResponse({ error: err.message });
       }
-    });
+
+      if (autosaveResp.ok) {
+        const autosaveFiles = await autosaveResp.json();
+        if (Array.isArray(autosaveFiles)) {
+          allFiles = allFiles.concat(autosaveFiles);
+        }
+      }
+
+      const excalidrawFiles = allFiles.filter(
+        (f) => f.type === "file" && f.name.endsWith(".excalidraw"),
+      );
+
+      const totalFiles = excalidrawFiles.length;
+      const totalSize = excalidrawFiles.reduce(
+        (sum, f) => sum + (f.size || 0),
+        0,
+      );
+      const averageSize = totalFiles > 0 ? totalSize / totalFiles : 0;
+
+      // Get last modified file across both folders
+      let lastSaved = "Never";
+      if (totalFiles > 0) {
+        const sorted = [...excalidrawFiles].sort((a, b) =>
+          b.name.localeCompare(a.name),
+        );
+        const latest = sorted[0];
+        // Try to extract date from filename
+        const dateMatch = latest.name.match(/(\d{4}-\d{2}-\d{2})/);
+        if (dateMatch) {
+          lastSaved = new Date(dateMatch[1]).toLocaleDateString();
+        }
+      }
+
+      sendResponse({
+        ok: true,
+        stats: { totalFiles, totalSize, averageSize, lastSaved },
+      });
+    }, sendResponse);
     return true;
   }
 
   if (msg.type === "GENERATE_THUMBNAIL") {
-    chrome.storage.local.get("token").then(async ({ token }) => {
+    withTimeout(async () => {
+      const { token } = await chrome.storage.local.get("token");
       if (!token) {
         sendResponse({ error: "Not authenticated" });
         return;
       }
 
-      try {
-        chrome.storage.sync
-          .get(["owner", "repo", "branch"])
-          .then(async (settings) => {
-            const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${msg.path}?ref=${settings.branch || "main"}`;
-            const headers = {
-              Authorization: `Bearer ${token}`,
-              Accept: "application/vnd.github+json",
-            };
+      const settings = await chrome.storage.sync.get([
+        "owner",
+        "repo",
+        "branch",
+      ]);
+      const url = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${msg.path}?ref=${settings.branch || "main"}`;
+      const headers = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      };
 
-            const resp = await fetch(url, { headers });
-            if (!resp.ok) {
-              throw new Error("Failed to fetch file");
-            }
-
-            const data = await resp.json();
-            const content = decodeURIComponent(
-              escape(atob(data.content.replace(/\n/g, ""))),
-            );
-            const scene = JSON.parse(content);
-
-            // Generate thumbnail
-            const thumbnail = await generateThumbnail(scene);
-
-            // Cache thumbnail in storage
-            try {
-              const { thumbnails = {} } =
-                await chrome.storage.local.get("thumbnails");
-              thumbnails[msg.path] = {
-                data: thumbnail,
-                timestamp: Date.now(),
-              };
-              await chrome.storage.local.set({ thumbnails });
-            } catch (err) {
-              console.error("Failed to cache thumbnail:", err);
-            }
-
-            sendResponse({ ok: true, thumbnail, scene });
-          });
-      } catch (err) {
-        sendResponse({ error: err.message });
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) {
+        throw new Error("Failed to fetch file");
       }
-    });
+
+      const data = await resp.json();
+      const content = new TextDecoder().decode(
+        Uint8Array.from(atob(data.content.replace(/\n/g, "")), (c) =>
+          c.charCodeAt(0),
+        ),
+      );
+      const scene = JSON.parse(content);
+
+      // Generate thumbnail
+      const thumbnail = await generateThumbnail(scene);
+
+      // Cache thumbnail in storage (max 100 entries, evict oldest)
+      try {
+        const { thumbnails = {} } =
+          await chrome.storage.local.get("thumbnails");
+        thumbnails[msg.path] = {
+          data: thumbnail,
+          timestamp: Date.now(),
+        };
+        // Evict oldest entries if cache exceeds 100
+        const keys = Object.keys(thumbnails);
+        if (keys.length > 100) {
+          const sorted = keys.sort(
+            (a, b) => thumbnails[a].timestamp - thumbnails[b].timestamp,
+          );
+          const toDelete = sorted.slice(0, keys.length - 100);
+          for (const k of toDelete) delete thumbnails[k];
+        }
+        await chrome.storage.local.set({ thumbnails });
+      } catch (err) {
+        console.error("Failed to cache thumbnail:", err);
+      }
+
+      sendResponse({ ok: true, thumbnail, scene });
+    }, sendResponse);
     return true;
   }
 
@@ -734,6 +739,200 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: false });
       }
     });
+    return true;
+  }
+
+  if (msg.type === "OPEN_OPTIONS") {
+    chrome.runtime.openOptionsPage();
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (msg.type === "UPDATE_AUTOSAVE") {
+    setupAutoSave();
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  // ─── AI Handlers ────────────────────────────────────────────────────────────
+
+  if (msg.type === "AI_CHAT") {
+    (async () => {
+      try {
+        const settings = await chrome.storage.local.get([
+          "aiApiKey",
+          "aiModel",
+          "aiMaxTokens",
+          "aiTemperature",
+          "aiContextMode",
+        ]);
+
+        if (!settings.aiApiKey) {
+          sendResponse({
+            error: "No API key. Open extension settings to add one.",
+          });
+          return;
+        }
+
+        const messages = [
+          { role: "system", content: EXCALIDRAW_SYSTEM_PROMPT },
+        ];
+
+        if (msg.history && msg.history.length > 0) {
+          const recentHistory = msg.history.slice(-20);
+          for (const h of recentHistory) {
+            messages.push({ role: h.role, content: h.content });
+          }
+        }
+
+        let userContent = msg.prompt;
+        if (msg.canvasContext) {
+          const contextStr = compressCanvasContext(msg.canvasContext);
+          if (contextStr) {
+            userContent += `\n\nCurrent canvas state:\n${contextStr}`;
+          }
+        }
+        messages.push({ role: "user", content: userContent });
+
+        const stream = await callOpenRouter(messages, settings);
+        handleAIStream(stream, sendResponse);
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "AI_STOP_GENERATION") {
+    if (activeAIStream) {
+      activeAIStream.cancel().catch(() => {});
+      activeAIStream = null;
+      sendResponse({ ok: true });
+    } else {
+      sendResponse({ ok: false });
+    }
+    return true;
+  }
+
+  if (msg.type === "AI_GET_SETTINGS") {
+    chrome.storage.local
+      .get([
+        "aiApiKey",
+        "aiModel",
+        "aiMaxTokens",
+        "aiTemperature",
+        "aiContextMode",
+      ])
+      .then((settings) => {
+        sendResponse({
+          ok: true,
+          settings: {
+            hasApiKey: !!settings.aiApiKey,
+            model: settings.aiModel || "openai/gpt-4o",
+            maxTokens: settings.aiMaxTokens || null,
+            temperature: settings.aiTemperature ?? 0.3,
+            contextMode: settings.aiContextMode || "auto",
+          },
+        });
+      });
+    return true;
+  }
+
+  if (msg.type === "AI_SAVE_SETTINGS") {
+    chrome.storage.local
+      .set({
+        aiApiKey: msg.settings.apiKey,
+        aiModel: msg.settings.model,
+        aiMaxTokens: msg.settings.maxTokens,
+        aiTemperature: msg.settings.temperature,
+        aiContextMode: msg.settings.contextMode,
+      })
+      .then(() => {
+        sendResponse({ ok: true });
+      });
+    return true;
+  }
+
+  if (msg.type === "AI_GET_HISTORY") {
+    chrome.storage.local
+      .get("aiConversationHistory")
+      .then(({ aiConversationHistory }) => {
+        sendResponse({ ok: true, history: aiConversationHistory || [] });
+      });
+    return true;
+  }
+
+  if (msg.type === "AI_CLEAR_HISTORY") {
+    chrome.storage.local.set({ aiConversationHistory: [] }).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  if (msg.type === "AI_TEST_KEY") {
+    (async () => {
+      try {
+        const aiApiKey =
+          msg.apiKey || (await chrome.storage.local.get("aiApiKey")).aiApiKey;
+        if (!aiApiKey) {
+          sendResponse({ ok: false, error: "No API key" });
+          return;
+        }
+        const resp = await fetch(OPENROUTER_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${aiApiKey}`,
+          },
+          body: JSON.stringify({
+            model: "openai/gpt-4o-mini",
+            messages: [{ role: "user", content: "Hi" }],
+            max_tokens: 5,
+          }),
+        });
+        if (resp.ok) {
+          sendResponse({ ok: true });
+        } else {
+          const err = await resp.json().catch(() => ({}));
+          sendResponse({
+            ok: false,
+            error: err.error?.message || `HTTP ${resp.status}`,
+          });
+        }
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "AI_GET_MODELS") {
+    (async () => {
+      try {
+        const aiApiKey =
+          msg.apiKey || (await chrome.storage.local.get("aiApiKey")).aiApiKey;
+        if (!aiApiKey) {
+          sendResponse({ ok: false, error: "No API key" });
+          return;
+        }
+        const resp = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${aiApiKey}` },
+        });
+        const data = await resp.json();
+        const models = data.data
+          ?.filter((m) => m.id)
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            contextLength: m.context_length,
+            pricing: m.pricing,
+          }));
+        sendResponse({ ok: true, models: models || [] });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
     return true;
   }
 });
@@ -808,14 +1007,9 @@ chrome.commands.onCommand.addListener(async (command) => {
 
 // ─── Auto-Save ───────────────────────────────────────────────────────────────
 
-let autoSaveTimer = null;
-
 async function setupAutoSave() {
-  // Clear existing timer
-  if (autoSaveTimer) {
-    clearInterval(autoSaveTimer);
-    autoSaveTimer = null;
-  }
+  // Clear existing alarm
+  chrome.alarms.clear("excalihub-autosave");
 
   const settings = await chrome.storage.sync.get([
     "autoSaveEnabled",
@@ -830,61 +1024,72 @@ async function setupAutoSave() {
     return;
   }
 
-  const intervalMs = (settings.autoSaveInterval || 5) * 60 * 1000; // Convert minutes to ms
-
-  autoSaveTimer = setInterval(async () => {
-    try {
-      // Get token
-      const { token } = await chrome.storage.local.get("token");
-      if (!token) return;
-
-      // Find all Excalidraw tabs
-      const tabs = await chrome.tabs.query({ url: "https://excalidraw.com/*" });
-
-      for (const tab of tabs) {
-        try {
-          // Get scene data
-          const sceneResult = await chrome.tabs.sendMessage(tab.id, {
-            type: "GET_SCENE",
-          });
-          if (sceneResult?.error || !sceneResult?.scene) continue;
-
-          // Generate auto-save filename with timestamp
-          const title = sceneResult.title || "untitled";
-          const timestamp = new Date()
-            .toISOString()
-            .replace(/[:.]/g, "-")
-            .slice(0, 19);
-          const fileName = `${title}_${timestamp}.excalidraw`;
-          const filePath = `_autosave/${fileName}`;
-
-          // Save to GitHub
-          const jsonStr = JSON.stringify(sceneResult.scene, null, 2);
-          const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
-
-          await saveToGitHub({
-            token,
-            owner: settings.owner,
-            repo: settings.repo,
-            branch: settings.branch || "main",
-            path: filePath,
-            content: b64,
-            message: `excalihub: auto-save ${title}`,
-          });
-
-          // Clean old backups if enabled
-          if (settings.autoSaveCleanOld) {
-            await cleanOldAutoSaves(settings, token, title);
-          }
-        } catch (err) {
-          console.error("Auto-save failed for tab:", tab.id, err);
-        }
-      }
-    } catch (err) {
-      console.error("Auto-save error:", err);
-    }
-  }, intervalMs);
+  const intervalMinutes = settings.autoSaveInterval || 5;
+  chrome.alarms.create("excalihub-autosave", {
+    periodInMinutes: intervalMinutes,
+  });
 }
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== "excalihub-autosave") return;
+
+  try {
+    const { token } = await chrome.storage.local.get("token");
+    if (!token) return;
+
+    const settings = await chrome.storage.sync.get([
+      "autoSaveCleanOld",
+      "owner",
+      "repo",
+      "branch",
+    ]);
+
+    // Find all Excalidraw tabs
+    const tabs = await chrome.tabs.query({ url: "https://excalidraw.com/*" });
+
+    for (const tab of tabs) {
+      try {
+        // Get scene data
+        const sceneResult = await chrome.tabs.sendMessage(tab.id, {
+          type: "GET_SCENE",
+        });
+        if (sceneResult?.error || !sceneResult?.scene) continue;
+
+        // Generate auto-save filename with timestamp
+        const title = sceneResult.title || "untitled";
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, 19);
+        const fileName = `${title}_${timestamp}.excalidraw`;
+        const filePath = `_autosave/${fileName}`;
+
+        // Save to GitHub
+        const jsonStr = JSON.stringify(sceneResult.scene, null, 2);
+        const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+
+        await saveToGitHub({
+          token,
+          owner: settings.owner,
+          repo: settings.repo,
+          branch: settings.branch || "main",
+          path: filePath,
+          content: b64,
+          message: `excalihub: auto-save ${title}`,
+        });
+
+        // Clean old backups if enabled
+        if (settings.autoSaveCleanOld) {
+          await cleanOldAutoSaves(settings, token, title);
+        }
+      } catch (err) {
+        console.error("Auto-save failed for tab:", tab.id, err);
+      }
+    }
+  } catch (err) {
+    console.error("Auto-save error:", err);
+  }
+});
 
 // Clean old auto-saves for a specific drawing
 async function cleanOldAutoSaves(settings, token, title, keepCount = 10) {
@@ -927,15 +1132,6 @@ async function cleanOldAutoSaves(settings, token, title, keepCount = 10) {
     console.error("Failed to clean old auto-saves:", err);
   }
 }
-
-// Handle UPDATE_AUTOSAVE message
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === "UPDATE_AUTOSAVE") {
-    setupAutoSave();
-    sendResponse({ ok: true });
-    return true;
-  }
-});
 
 // Setup auto-save on service worker startup
 setupAutoSave();
@@ -1004,7 +1200,16 @@ For general questions, respond with:
   "message": "<markdown response>"
 }
 
-IMPORTANT: Always respond with valid JSON. Use reasonable coordinates (x: 0-2000, y: 0-1000). Text elements must have a "text" field. Lines/arrows must have a "points" array like [[0,0],[100,0]].`;
+IMPORTANT RULES:
+1. Always respond with a SINGLE valid JSON object. Do not add explanation outside the JSON.
+2. Use reasonable coordinates (x: 0-2000, y: 0-1000).
+3. Text elements must have a "text" field.
+4. Lines/arrows must have a "points" array like [[0,0],[100,0]].
+5. MINIMIZE verbosity — omit optional fields that equal their defaults:
+   - Skip "angle":0, "locked":false, "groupIds":[], "boundElements":null, "link":null, "frameId":null unless needed.
+   - Skip "fillStyle","strokeStyle","roughness","opacity" when using defaults (hachure, solid, 1, 100).
+6. For org charts / hierarchies, use rectangles for nodes with floating text labels — keep it simple.
+7. CRITICAL: Complete the ENTIRE JSON before stopping. If a diagram is complex, use fewer elements. A role hierarchy needs 10-15 elements max.`;
 
 function compressCanvasContext(scene) {
   if (!scene || !scene.elements || scene.elements.length === 0) return null;
@@ -1041,10 +1246,12 @@ async function callOpenRouter(messages, settings) {
   const body = {
     model: settings.aiModel || "openai/gpt-4o",
     messages,
-    max_tokens: settings.aiMaxTokens || 2048,
     temperature: settings.aiTemperature ?? 0.3,
     stream: true,
   };
+  if (settings.aiMaxTokens) {
+    body.max_tokens = settings.aiMaxTokens;
+  }
 
   const resp = await fetch(OPENROUTER_URL, {
     method: "POST",
@@ -1058,7 +1265,8 @@ async function callOpenRouter(messages, settings) {
   });
 
   if (resp.status === 401) throw new Error("Invalid API key");
-  if (resp.status === 429) throw new Error("Rate limited — please wait a moment");
+  if (resp.status === 429)
+    throw new Error("Rate limited — please wait a moment");
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
     throw new Error(err.error?.message || `API error: ${resp.status}`);
@@ -1094,31 +1302,57 @@ function handleAIStream(stream, sendResponse) {
 
           try {
             const parsed = JSON.parse(data);
+            // Check for provider errors in the response
+            if (parsed.error) {
+              const errMsg =
+                parsed.error.message || JSON.stringify(parsed.error);
+              chrome.runtime
+                .sendMessage({
+                  type: "AI_STREAM_ERROR",
+                  error: `Provider error: ${errMsg}`,
+                })
+                .catch(() => {});
+              sendResponse({ error: `Provider error: ${errMsg}` });
+              return;
+            }
             const delta = parsed.choices?.[0]?.delta?.content;
             if (delta) {
               fullContent += delta;
-              chrome.runtime.sendMessage({
-                type: "AI_STREAM_CHUNK",
-                chunk: delta,
-                fullContent,
-              }).catch(() => {});
+              chrome.runtime
+                .sendMessage({
+                  type: "AI_STREAM_CHUNK",
+                  chunk: delta,
+                  fullContent,
+                })
+                .catch(() => {});
             }
           } catch {}
         }
       }
 
-      chrome.runtime.sendMessage({
-        type: "AI_STREAM_DONE",
-        fullContent,
-      }).catch(() => {});
+      chrome.runtime
+        .sendMessage({
+          type: "AI_STREAM_DONE",
+          fullContent,
+        })
+        .catch(() => {});
 
-      sendResponse({ ok: true, content: fullContent });
+      if (!fullContent.trim()) {
+        sendResponse({
+          error:
+            "The AI returned no content. The model may be unavailable — try a different model or check your API key.",
+        });
+      } else {
+        sendResponse({ ok: true, content: fullContent });
+      }
     } catch (err) {
       if (err.name !== "AbortError") {
-        chrome.runtime.sendMessage({
-          type: "AI_STREAM_ERROR",
-          error: err.message,
-        }).catch(() => {});
+        chrome.runtime
+          .sendMessage({
+            type: "AI_STREAM_ERROR",
+            error: err.message,
+          })
+          .catch(() => {});
         sendResponse({ error: err.message });
       }
     } finally {
@@ -1128,172 +1362,3 @@ function handleAIStream(stream, sendResponse) {
 
   processChunk();
 }
-
-// ─── AI Message Handlers ────────────────────────────────────────────────────
-
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg.type === "AI_CHAT") {
-    (async () => {
-      try {
-        const settings = await chrome.storage.sync.get([
-          "aiApiKey",
-          "aiModel",
-          "aiMaxTokens",
-          "aiTemperature",
-          "aiContextMode",
-        ]);
-
-        if (!settings.aiApiKey) {
-          sendResponse({ error: "No API key. Open extension settings to add one." });
-          return;
-        }
-
-        const messages = [{ role: "system", content: EXCALIDRAW_SYSTEM_PROMPT }];
-
-        if (msg.history && msg.history.length > 0) {
-          const recentHistory = msg.history.slice(-20);
-          for (const h of recentHistory) {
-            messages.push({ role: h.role, content: h.content });
-          }
-        }
-
-        let userContent = msg.prompt;
-        if (msg.canvasContext) {
-          const contextStr = compressCanvasContext(msg.canvasContext);
-          if (contextStr) {
-            userContent += `\n\nCurrent canvas state:\n${contextStr}`;
-          }
-        }
-        messages.push({ role: "user", content: userContent });
-
-        const stream = await callOpenRouter(messages, settings);
-        handleAIStream(stream, sendResponse);
-      } catch (err) {
-        sendResponse({ error: err.message });
-      }
-    })();
-    return true;
-  }
-
-  if (msg.type === "AI_STOP_GENERATION") {
-    if (activeAIStream) {
-      activeAIStream.cancel().catch(() => {});
-      activeAIStream = null;
-      sendResponse({ ok: true });
-    } else {
-      sendResponse({ ok: false });
-    }
-    return true;
-  }
-
-  if (msg.type === "AI_GET_SETTINGS") {
-    chrome.storage.sync.get([
-      "aiApiKey",
-      "aiModel",
-      "aiMaxTokens",
-      "aiTemperature",
-      "aiContextMode",
-    ]).then((settings) => {
-      sendResponse({
-        ok: true,
-        settings: {
-          hasApiKey: !!settings.aiApiKey,
-          model: settings.aiModel || "openai/gpt-4o",
-          maxTokens: settings.aiMaxTokens || 2048,
-          temperature: settings.aiTemperature ?? 0.3,
-          contextMode: settings.aiContextMode || "auto",
-        },
-      });
-    });
-    return true;
-  }
-
-  if (msg.type === "AI_SAVE_SETTINGS") {
-    chrome.storage.sync.set({
-      aiApiKey: msg.settings.apiKey,
-      aiModel: msg.settings.model,
-      aiMaxTokens: msg.settings.maxTokens,
-      aiTemperature: msg.settings.temperature,
-      aiContextMode: msg.settings.contextMode,
-    }).then(() => {
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-
-  if (msg.type === "AI_GET_HISTORY") {
-    chrome.storage.local.get("aiConversationHistory").then(({ aiConversationHistory }) => {
-      sendResponse({ ok: true, history: aiConversationHistory || [] });
-    });
-    return true;
-  }
-
-  if (msg.type === "AI_CLEAR_HISTORY") {
-    chrome.storage.local.set({ aiConversationHistory: [] }).then(() => {
-      sendResponse({ ok: true });
-    });
-    return true;
-  }
-
-  if (msg.type === "AI_TEST_KEY") {
-    (async () => {
-      try {
-        const aiApiKey = msg.apiKey || (await chrome.storage.sync.get("aiApiKey")).aiApiKey;
-        if (!aiApiKey) {
-          sendResponse({ ok: false, error: "No API key" });
-          return;
-        }
-        const resp = await fetch(OPENROUTER_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${aiApiKey}`,
-          },
-          body: JSON.stringify({
-            model: "openai/gpt-4o-mini",
-            messages: [{ role: "user", content: "Hi" }],
-            max_tokens: 5,
-          }),
-        });
-        if (resp.ok) {
-          sendResponse({ ok: true });
-        } else {
-          const err = await resp.json().catch(() => ({}));
-          sendResponse({ ok: false, error: err.error?.message || `HTTP ${resp.status}` });
-        }
-      } catch (err) {
-        sendResponse({ ok: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-
-  if (msg.type === "AI_GET_MODELS") {
-    (async () => {
-      try {
-        const aiApiKey = msg.apiKey || (await chrome.storage.sync.get("aiApiKey")).aiApiKey;
-        if (!aiApiKey) {
-          sendResponse({ ok: false, error: "No API key" });
-          return;
-        }
-        const resp = await fetch("https://openrouter.ai/api/v1/models", {
-          headers: { Authorization: `Bearer ${aiApiKey}` },
-        });
-        const data = await resp.json();
-        const models = data.data
-          ?.filter((m) => m.id)
-          .sort((a, b) => a.id.localeCompare(b.id))
-          .map((m) => ({
-            id: m.id,
-            name: m.name || m.id,
-            contextLength: m.context_length,
-            pricing: m.pricing,
-          }));
-        sendResponse({ ok: true, models: models || [] });
-      } catch (err) {
-        sendResponse({ ok: false, error: err.message });
-      }
-    })();
-    return true;
-  }
-});

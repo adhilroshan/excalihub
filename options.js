@@ -239,7 +239,7 @@ function formatSize(bytes) {
 // ─── AI Settings ──────────────────────────────────────────────────────────────
 
 async function loadAISettings() {
-  const settings = await chrome.storage.sync.get([
+  const settings = await chrome.storage.local.get([
     "aiApiKey",
     "aiModel",
     "aiMaxTokens",
@@ -250,16 +250,17 @@ async function loadAISettings() {
     document.getElementById("aiApiKey").value = settings.aiApiKey;
     loadModels(settings.aiModel);
   }
-  if (settings.aiMaxTokens) {
-    document.getElementById("aiMaxTokens").value = settings.aiMaxTokens;
-    document.getElementById("aiMaxTokensValue").textContent = settings.aiMaxTokens;
-  }
+  const maxTokens = settings.aiMaxTokens || "";
+  document.getElementById("aiMaxTokens").value = maxTokens;
+  document.getElementById("aiMaxTokensValue").textContent =
+    maxTokens || "no limit";
   if (settings.aiTemperature !== undefined) {
     document.getElementById("aiTemperature").value = settings.aiTemperature;
-    document.getElementById("aiTemperatureValue").textContent = settings.aiTemperature;
+    document.getElementById("aiTemperatureValue").textContent =
+      settings.aiTemperature;
   }
   const contextRadio = document.querySelector(
-    `input[name="aiContextMode"][value="${settings.aiContextMode || "auto"}"]`
+    `input[name="aiContextMode"][value="${settings.aiContextMode || "auto"}"]`,
   );
   if (contextRadio) contextRadio.checked = true;
 }
@@ -275,14 +276,24 @@ function renderModelItem(m) {
   if (price) {
     const promptCost = parseFloat(price.prompt || 0);
     if (promptCost === 0) priceLabel = "free";
-    else if (promptCost > 0) priceLabel = `$${(promptCost * 1000000).toFixed(2)}/M`;
+    else if (promptCost > 0)
+      priceLabel = `$${(promptCost * 1000000).toFixed(2)}/M`;
   }
   const popular = [
-    "openai/gpt-4o", "openai/gpt-4o-mini", "openai/gpt-4.1", "openai/gpt-4.1-mini", "openai/gpt-4.1-nano",
-    "anthropic/claude-sonnet-4", "anthropic/claude-3.5-sonnet", "anthropic/claude-3-haiku",
-    "google/gemini-2.5-pro-preview", "google/gemini-2.0-flash-001",
-    "meta-llama/llama-4-maverick", "meta-llama/llama-3.3-70b-instruct",
-    "deepseek/deepseek-r1", "deepseek/deepseek-chat",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "openai/gpt-4.1",
+    "openai/gpt-4.1-mini",
+    "openai/gpt-4.1-nano",
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-3-haiku",
+    "google/gemini-2.5-pro-preview",
+    "google/gemini-2.0-flash-001",
+    "meta-llama/llama-4-maverick",
+    "meta-llama/llama-3.3-70b-instruct",
+    "deepseek/deepseek-r1",
+    "deepseek/deepseek-chat",
   ];
   const isPopular = popular.includes(m.id);
   const isSelected = m.id === selectedModelValue;
@@ -292,15 +303,22 @@ function renderModelItem(m) {
     display: flex; justify-content: space-between; align-items: center; gap: 8px;
     ${isSelected ? "background: #1e3a5f; color: #4f8ef7;" : "color: #e8edf2;"}
   `;
-  div.addEventListener("mouseenter", () => { if (!isSelected) div.style.background = "#1a1f25"; });
-  div.addEventListener("mouseleave", () => { if (m.id !== selectedModelValue) div.style.background = isSelected ? "#1e3a5f" : ""; });
+  div.addEventListener("mouseenter", () => {
+    if (!isSelected) div.style.background = "#1a1f25";
+  });
+  div.addEventListener("mouseleave", () => {
+    if (m.id !== selectedModelValue)
+      div.style.background = isSelected ? "#1e3a5f" : "";
+  });
 
   const nameSpan = document.createElement("span");
-  nameSpan.style.cssText = "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+  nameSpan.style.cssText =
+    "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
   nameSpan.textContent = (isPopular ? "\u2605 " : "") + (m.name || m.id);
 
   const metaSpan = document.createElement("span");
-  metaSpan.style.cssText = "font-size: 10px; color: #6b7685; white-space: nowrap; flex-shrink: 0;";
+  metaSpan.style.cssText =
+    "font-size: 10px; color: #6b7685; white-space: nowrap; flex-shrink: 0;";
   metaSpan.textContent = priceLabel;
 
   div.appendChild(nameSpan);
@@ -323,14 +341,16 @@ function filterModels(query) {
 
   const q = query.toLowerCase().trim();
   const filtered = q
-    ? allModels.filter((m) =>
-        (m.id || "").toLowerCase().includes(q) ||
-        (m.name || "").toLowerCase().includes(q)
+    ? allModels.filter(
+        (m) =>
+          (m.id || "").toLowerCase().includes(q) ||
+          (m.name || "").toLowerCase().includes(q),
       )
     : allModels;
 
   if (filtered.length === 0) {
-    list.innerHTML = '<div style="padding: 12px; text-align: center; color: #6b7685; font-size: 12px;">No models found</div>';
+    list.innerHTML =
+      '<div style="padding: 12px; text-align: center; color: #6b7685; font-size: 12px;">No models found</div>';
     return;
   }
 
@@ -341,7 +361,15 @@ function filterModels(query) {
     grouped[provider].push(m);
   }
 
-  const providerOrder = ["openai", "anthropic", "google", "meta-llama", "deepseek", "mistralai", "x-ai"];
+  const providerOrder = [
+    "openai",
+    "anthropic",
+    "google",
+    "meta-llama",
+    "deepseek",
+    "mistralai",
+    "x-ai",
+  ];
   const sortedProviders = Object.keys(grouped).sort((a, b) => {
     const ai = providerOrder.indexOf(a);
     const bi = providerOrder.indexOf(b);
@@ -353,8 +381,10 @@ function filterModels(query) {
 
   for (const provider of sortedProviders) {
     const header = document.createElement("div");
-    header.style.cssText = "padding: 6px 12px 3px; font-size: 10px; font-weight: 600; color: #6b7685; text-transform: uppercase; letter-spacing: 0.5px;";
-    header.textContent = provider.charAt(0).toUpperCase() + provider.slice(1).replace(/-/g, " ");
+    header.style.cssText =
+      "padding: 6px 12px 3px; font-size: 10px; font-weight: 600; color: #6b7685; text-transform: uppercase; letter-spacing: 0.5px;";
+    header.textContent =
+      provider.charAt(0).toUpperCase() + provider.slice(1).replace(/-/g, " ");
     list.appendChild(header);
 
     for (const m of grouped[provider]) {
@@ -374,7 +404,11 @@ document.getElementById("aiModelTrigger")?.addEventListener("click", () => {
   dd.style.display = isOpen ? "none" : "flex";
   if (!isOpen) {
     const search = document.getElementById("aiModelSearch");
-    if (search) { search.value = ""; search.focus(); filterModels(""); }
+    if (search) {
+      search.value = "";
+      search.focus();
+      filterModels("");
+    }
   }
 });
 
@@ -400,10 +434,15 @@ async function loadModels(selectedModel) {
   if (trigger) trigger.textContent = "Loading models...";
   selectedModelValue = selectedModel || "";
 
-  const resp = await chrome.runtime.sendMessage({ type: "AI_GET_MODELS", apiKey: savedKey });
+  const resp = await chrome.runtime.sendMessage({
+    type: "AI_GET_MODELS",
+    apiKey: savedKey,
+  });
 
   if (!resp?.ok || !resp.models?.length) {
-    allModels = [{ id: "openai/gpt-4o", name: "GPT-4o (default)", pricing: null }];
+    allModels = [
+      { id: "openai/gpt-4o", name: "GPT-4o (default)", pricing: null },
+    ];
     if (trigger) trigger.textContent = "GPT-4o (default)";
     if (hiddenInput) hiddenInput.value = "openai/gpt-4o";
     selectedModelValue = "openai/gpt-4o";
@@ -411,11 +450,20 @@ async function loadModels(selectedModel) {
   }
 
   const popular = [
-    "openai/gpt-4o", "openai/gpt-4o-mini", "openai/gpt-4.1", "openai/gpt-4.1-mini", "openai/gpt-4.1-nano",
-    "anthropic/claude-sonnet-4", "anthropic/claude-3.5-sonnet", "anthropic/claude-3-haiku",
-    "google/gemini-2.5-pro-preview", "google/gemini-2.0-flash-001",
-    "meta-llama/llama-4-maverick", "meta-llama/llama-3.3-70b-instruct",
-    "deepseek/deepseek-r1", "deepseek/deepseek-chat",
+    "openai/gpt-4o",
+    "openai/gpt-4o-mini",
+    "openai/gpt-4.1",
+    "openai/gpt-4.1-mini",
+    "openai/gpt-4.1-nano",
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-3.5-sonnet",
+    "anthropic/claude-3-haiku",
+    "google/gemini-2.5-pro-preview",
+    "google/gemini-2.0-flash-001",
+    "meta-llama/llama-4-maverick",
+    "meta-llama/llama-3.3-70b-instruct",
+    "deepseek/deepseek-r1",
+    "deepseek/deepseek-chat",
   ];
 
   allModels = resp.models.sort((a, b) => {
@@ -433,7 +481,8 @@ async function loadModels(selectedModel) {
     if (trigger) trigger.textContent = match.name || match.id;
     if (hiddenInput) hiddenInput.value = match.id;
   } else {
-    const defaultModel = allModels.find((m) => m.id === "openai/gpt-4o") || allModels[0];
+    const defaultModel =
+      allModels.find((m) => m.id === "openai/gpt-4o") || allModels[0];
     selectedModelValue = defaultModel.id;
     if (trigger) trigger.textContent = defaultModel.name || defaultModel.id;
     if (hiddenInput) hiddenInput.value = defaultModel.id;
@@ -448,66 +497,79 @@ function showAIStatus(msg, type) {
 }
 
 document.getElementById("aiMaxTokens")?.addEventListener("input", (e) => {
-  document.getElementById("aiMaxTokensValue").textContent = e.target.value;
+  document.getElementById("aiMaxTokensValue").textContent =
+    e.target.value && parseInt(e.target.value, 10) > 0
+      ? e.target.value
+      : "no limit";
 });
 
 document.getElementById("aiTemperature")?.addEventListener("input", (e) => {
   document.getElementById("aiTemperatureValue").textContent = e.target.value;
 });
 
-document.getElementById("btn-save-ai-settings")?.addEventListener("click", async () => {
-  const apiKey = document.getElementById("aiApiKey").value.trim();
-  const model = document.getElementById("aiModel").value;
-  const maxTokens = parseInt(document.getElementById("aiMaxTokens").value, 10);
-  const temperature = parseFloat(document.getElementById("aiTemperature").value);
-  const contextMode =
-    document.querySelector('input[name="aiContextMode"]:checked')?.value || "auto";
+document
+  .getElementById("btn-save-ai-settings")
+  ?.addEventListener("click", async () => {
+    const apiKey = document.getElementById("aiApiKey").value.trim();
+    const model = document.getElementById("aiModel").value;
+    const maxTokens = parseInt(
+      document.getElementById("aiMaxTokens").value,
+      10,
+    );
+    const temperature = parseFloat(
+      document.getElementById("aiTemperature").value,
+    );
+    const contextMode =
+      document.querySelector('input[name="aiContextMode"]:checked')?.value ||
+      "auto";
 
-  await chrome.storage.sync.set({
-    aiApiKey: apiKey,
-    aiModel: model,
-    aiMaxTokens: maxTokens,
-    aiTemperature: temperature,
-    aiContextMode: contextMode,
+    await chrome.storage.local.set({
+      aiApiKey: apiKey,
+      aiModel: model,
+      aiMaxTokens: maxTokens > 0 ? maxTokens : null,
+      aiTemperature: temperature,
+      aiContextMode: contextMode,
+    });
+
+    showAIStatus("AI settings saved!", "success");
   });
 
-  showAIStatus("AI settings saved!", "success");
-});
+document
+  .getElementById("btn-test-ai-key")
+  ?.addEventListener("click", async () => {
+    const btn = document.getElementById("btn-test-ai-key");
+    const statusEl = document.getElementById("ai-key-status");
+    const apiKey = document.getElementById("aiApiKey").value.trim();
 
-document.getElementById("btn-test-ai-key")?.addEventListener("click", async () => {
-  const btn = document.getElementById("btn-test-ai-key");
-  const statusEl = document.getElementById("ai-key-status");
-  const apiKey = document.getElementById("aiApiKey").value.trim();
+    if (!apiKey) {
+      statusEl.textContent = "Enter an API key first";
+      statusEl.style.display = "block";
+      statusEl.style.color = "#f76f6f";
+      return;
+    }
 
-  if (!apiKey) {
-    statusEl.textContent = "Enter an API key first";
+    btn.disabled = true;
+    btn.textContent = "Testing...";
+    statusEl.style.display = "none";
+
+    const resp = await chrome.runtime.sendMessage({
+      type: "AI_TEST_KEY",
+      apiKey,
+    });
+
+    btn.disabled = false;
+    btn.textContent = "Test";
     statusEl.style.display = "block";
-    statusEl.style.color = "#f76f6f";
-    return;
-  }
 
-  btn.disabled = true;
-  btn.textContent = "Testing...";
-  statusEl.style.display = "none";
-
-  const resp = await chrome.runtime.sendMessage({
-    type: "AI_TEST_KEY",
-    apiKey,
+    if (resp?.ok) {
+      statusEl.textContent = "API key is valid!";
+      statusEl.style.color = "#4ade80";
+      loadModels(document.getElementById("aiModel")?.value);
+    } else {
+      statusEl.textContent = `Invalid: ${resp?.error || "unknown error"}`;
+      statusEl.style.color = "#f76f6f";
+    }
   });
-
-  btn.disabled = false;
-  btn.textContent = "Test";
-  statusEl.style.display = "block";
-
-  if (resp?.ok) {
-    statusEl.textContent = "API key is valid!";
-    statusEl.style.color = "#4ade80";
-    loadModels(document.getElementById("aiModel")?.value);
-  } else {
-    statusEl.textContent = `Invalid: ${resp?.error || "unknown error"}`;
-    statusEl.style.color = "#f76f6f";
-  }
-});
 
 document.getElementById("btn-refresh-models")?.addEventListener("click", () => {
   loadModels(document.getElementById("aiModel")?.value);
