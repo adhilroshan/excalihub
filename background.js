@@ -290,6 +290,22 @@ async function generateThumbnail(sceneData) {
   });
 }
 
+// ─── Port-based streaming: content scripts / popup connect to us ─────────────
+
+const activePorts = new Map(); // tabId or uniqueKey -> port
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (!port.name.startsWith("ai-stream-")) return;
+  const sender = port.sender;
+  const key = sender.tab
+    ? `tab-${sender.tab.id}-${port.name}`
+    : `popup-${port.name}`;
+  activePorts.set(key, port);
+  port.onDisconnect.addListener(() => {
+    activePorts.delete(key);
+  });
+});
+
 // ─── Message Handler ─────────────────────────────────────────────────────────
 // IMPORTANT: The listener must NOT be async. Return true synchronously to keep
 // the message channel open, then call sendResponse inside the async handler.
@@ -795,7 +811,45 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         messages.push({ role: "user", content: userContent });
 
         const stream = await callOpenRouter(messages, settings);
-        handleAIStream(stream, sendResponse);
+
+        // Find the port that the content script / popup opened before sending this message
+        let port = null;
+        if (msg._portName) {
+          // Direct lookup by port name (most reliable — avoids race condition)
+          for (const [key, p] of activePorts) {
+            if (
+              key.endsWith(`-${msg._portName}`) ||
+              key === `popup-${msg._portName}`
+            ) {
+              port = p;
+              break;
+            }
+          }
+        }
+        if (!port) {
+          // Fallback: match by sender tab id
+          if (_sender.tab) {
+            for (const [key, p] of activePorts) {
+              if (key.startsWith(`tab-${_sender.tab.id}-`)) {
+                port = p;
+                break;
+              }
+            }
+          } else {
+            for (const [key, p] of activePorts) {
+              if (key.startsWith("popup-")) {
+                port = p;
+                break;
+              }
+            }
+          }
+        }
+
+        if (port) {
+          handleAIStreamWithPort(stream, port, sendResponse);
+        } else {
+          handleAIStreamNoPort(stream, sendResponse);
+        }
       } catch (err) {
         sendResponse({ error: err.message });
       }
@@ -839,17 +893,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "AI_SAVE_SETTINGS") {
-    chrome.storage.local
-      .set({
-        aiApiKey: msg.settings.apiKey,
-        aiModel: msg.settings.model,
-        aiMaxTokens: msg.settings.maxTokens,
-        aiTemperature: msg.settings.temperature,
-        aiContextMode: msg.settings.contextMode,
-      })
-      .then(() => {
-        sendResponse({ ok: true });
-      });
+    (async () => {
+      const toSet = {};
+      if (msg.settings.apiKey !== undefined)
+        toSet.aiApiKey = msg.settings.apiKey;
+      if (msg.settings.model !== undefined) toSet.aiModel = msg.settings.model;
+      if (msg.settings.maxTokens !== undefined)
+        toSet.aiMaxTokens = msg.settings.maxTokens;
+      if (msg.settings.temperature !== undefined)
+        toSet.aiTemperature = msg.settings.temperature;
+      if (msg.settings.contextMode !== undefined)
+        toSet.aiContextMode = msg.settings.contextMode;
+      await chrome.storage.local.set(toSet);
+      sendResponse({ ok: true });
+    })();
     return true;
   }
 
@@ -1277,7 +1334,107 @@ async function callOpenRouter(messages, settings) {
 
 let activeAIStream = null;
 
-function handleAIStream(stream, sendResponse) {
+// New: Port-based streaming — streams chunks over a stable long-lived port
+function handleAIStreamWithPort(stream, port, sendResponse) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = "";
+  let buffer = "";
+  let portAlive = true;
+
+  activeAIStream = reader;
+
+  // Safe postMessage — port may disconnect during MV3 lifecycle
+  const postToPort = (msg) => {
+    if (!portAlive) return;
+    try {
+      port.postMessage(msg);
+    } catch (_) {
+      portAlive = false;
+    }
+  };
+
+  const processChunk = async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.error) {
+              const errMsg =
+                parsed.error.message || JSON.stringify(parsed.error);
+              postToPort({
+                type: "error",
+                error: `Provider error: ${errMsg}`,
+              });
+              sendResponse({ error: `Provider error: ${errMsg}` });
+              return;
+            }
+
+            const choice = parsed.choices?.[0];
+            if (!choice) continue;
+            const delta = choice.delta;
+
+            if (delta.reasoning) {
+              fullContent += delta.reasoning;
+              postToPort({
+                type: "chunk",
+                delta: delta.reasoning,
+                fullContent,
+              });
+            }
+
+            if (delta.content) {
+              fullContent += delta.content;
+              postToPort({
+                type: "chunk",
+                delta: delta.content,
+                fullContent,
+              });
+            }
+          } catch {}
+        }
+      }
+
+      postToPort({ type: "done", fullContent });
+      if (portAlive) {
+        sendResponse({ ok: true, content: fullContent });
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        postToPort({ type: "error", error: err.message });
+        if (portAlive) sendResponse({ error: err.message });
+      }
+    } finally {
+      activeAIStream = null;
+    }
+  };
+
+  port.onDisconnect.addListener(() => {
+    portAlive = false;
+    // Client disconnected — cancel the stream
+    if (activeAIStream === reader) {
+      reader.cancel().catch(() => {});
+      activeAIStream = null;
+    }
+  });
+
+  processChunk();
+}
+
+// Fallback: when port can't be opened, use fire-and-forget sendMessage (old behavior)
+function handleAIStreamNoPort(stream, sendResponse) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let fullContent = "";
@@ -1302,7 +1459,6 @@ function handleAIStream(stream, sendResponse) {
 
           try {
             const parsed = JSON.parse(data);
-            // Check for provider errors in the response
             if (parsed.error) {
               const errMsg =
                 parsed.error.message || JSON.stringify(parsed.error);
@@ -1315,13 +1471,28 @@ function handleAIStream(stream, sendResponse) {
               sendResponse({ error: `Provider error: ${errMsg}` });
               return;
             }
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              fullContent += delta;
+
+            const choice = parsed.choices?.[0];
+            if (!choice) continue;
+            const delta = choice.delta;
+
+            if (delta.reasoning) {
+              fullContent += delta.reasoning;
               chrome.runtime
                 .sendMessage({
                   type: "AI_STREAM_CHUNK",
-                  chunk: delta,
+                  chunk: delta.reasoning,
+                  fullContent,
+                })
+                .catch(() => {});
+            }
+
+            if (delta.content) {
+              fullContent += delta.content;
+              chrome.runtime
+                .sendMessage({
+                  type: "AI_STREAM_CHUNK",
+                  chunk: delta.content,
                   fullContent,
                 })
                 .catch(() => {});
@@ -1361,4 +1532,9 @@ function handleAIStream(stream, sendResponse) {
   };
 
   processChunk();
+}
+
+// Kept for backwards compatibility with any remaining fire-and-forget paths
+function handleAIStream(stream, sendResponse) {
+  handleAIStreamNoPort(stream, sendResponse);
 }

@@ -186,6 +186,27 @@ function centerElementsOnCanvas(elements) {
 
 function applyElementsToCanvas(elements) {
   try {
+    // Try Excalidraw's global API first (more reliable than storage events)
+    const excalidrawAPI = window.__EXCALIDRAW_API__ || window.excalidrawAPI;
+    if (excalidrawAPI && typeof excalidrawAPI.updateScene === "function") {
+      try {
+        const existing = localStorage.getItem("excalidraw");
+        const existingElements = existing ? JSON.parse(existing) : [];
+        const allElements = [...existingElements, ...elements];
+        excalidrawAPI.updateScene({
+          elements: allElements,
+          appState: {},
+        });
+        return { ok: true };
+      } catch (apiErr) {
+        console.warn(
+          "Excalidraw API updateScene failed, falling back:",
+          apiErr,
+        );
+      }
+    }
+
+    // Fallback: localStorage + StorageEvent
     const existing = localStorage.getItem("excalidraw");
     const existingElements = existing ? JSON.parse(existing) : [];
 
@@ -193,12 +214,6 @@ function applyElementsToCanvas(elements) {
     localStorage.setItem("excalidraw", JSON.stringify(allElements));
 
     window.dispatchEvent(new StorageEvent("storage", { key: "excalidraw" }));
-
-    const canvas = document.querySelector("canvas");
-    if (canvas) {
-      canvas.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-      canvas.dispatchEvent(new Event("pointerup", { bubbles: true }));
-    }
 
     return { ok: true };
   } catch (err) {
@@ -208,7 +223,11 @@ function applyElementsToCanvas(elements) {
 
 function parseAIResponse(content) {
   try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    // Try to find JSON object - look for action field to identify our response format
+    // This handles cases where reasoning text appears before the JSON
+    const jsonMatch = content.match(
+      /\{[\s\S]*"action"\s*:\s*"(generate|improve|analyze|chat)"[\s\S]*\}/,
+    );
     if (!jsonMatch) return { action: "chat", message: content };
 
     const raw = jsonMatch[0];
@@ -1565,11 +1584,65 @@ function injectSidebar() {
       if (!aiChatInitialized) {
         aiChatInitialized = true;
         initSidebarAIChat();
+      } else {
+        // On subsequent opens, restore history if messages div is empty
+        const messagesEl = document.getElementById(
+          "excalihub-ai-sidebar-messages",
+        );
+        if (
+          messagesEl &&
+          messagesEl.children.length === 0 &&
+          aiChatState.history.length > 0
+        ) {
+          renderSidebarHistory(messagesEl);
+        }
       }
     });
   }
 
   // ─── Sidebar AI Chat ───────────────────────────────────────────────────────
+
+  function renderSidebarHistory(messagesEl) {
+    if (!messagesEl || aiChatState.history.length === 0) return;
+    messagesEl.innerHTML = "";
+    for (const msg of aiChatState.history) {
+      if (msg.role === "user") {
+        const row = document.createElement("div");
+        row.className = "eai-msg-row";
+        row.style.cssText =
+          "align-self: flex-end; max-width: 88%; margin-bottom: 18px;";
+        const bubble = document.createElement("div");
+        bubble.style.cssText =
+          "background: var(--accent-dim); color: var(--text); padding: 8px 12px; border-radius: 12px 12px 4px 12px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; border: 1px solid rgba(79,142,247,0.2);";
+        bubble.textContent = msg.content;
+        row.appendChild(bubble);
+        messagesEl.appendChild(row);
+      } else {
+        const row = document.createElement("div");
+        row.className = "eai-msg-row";
+        row.style.cssText =
+          "align-self: flex-start; max-width: 92%; margin-bottom: 18px;";
+        if (
+          msg.parsed &&
+          (msg.parsed.action === "generate" ||
+            msg.parsed.action === "improve") &&
+          Array.isArray(msg.parsed.elements)
+        ) {
+          row.appendChild(buildGenerateCard(msg.parsed));
+        } else {
+          const bubble = document.createElement("div");
+          bubble.style.cssText =
+            "background: var(--surface); padding: 8px 12px; border-radius: 12px 12px 12px 4px; border: 1px solid var(--border);";
+          const text =
+            msg.parsed?.analysis || msg.parsed?.message || msg.content;
+          bubble.appendChild(renderMarkdown(text));
+          row.appendChild(bubble);
+        }
+        messagesEl.appendChild(row);
+      }
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
 
   function initSidebarAIChat() {
     const input = document.getElementById("excalihub-ai-sidebar-input");
@@ -1730,12 +1803,40 @@ function injectSidebar() {
       });
 
       try {
-        const response = await chrome.runtime.sendMessage({
+        // Open a port for streaming before sending the message
+        const PORT_NAME = "ai-stream-sidebar";
+        let streamPort = null;
+        const streamPromise = new Promise((resolve) => {
+          streamPort = chrome.runtime.connect({ name: PORT_NAME });
+          let accumulatedContent = "";
+          streamPort.onMessage.addListener((portMsg) => {
+            if (portMsg.type === "chunk") {
+              accumulatedContent = portMsg.fullContent;
+              updateStreamingMessage(portMsg.fullContent);
+            } else if (portMsg.type === "done") {
+              accumulatedContent = portMsg.fullContent;
+              resolve({ content: portMsg.fullContent });
+            } else if (portMsg.type === "error") {
+              resolve({ error: portMsg.error });
+            }
+          });
+          streamPort.onDisconnect.addListener(() => {
+            resolve({ error: "Stream disconnected" });
+          });
+        });
+
+        chrome.runtime.sendMessage({
           type: "AI_CHAT",
           prompt: text,
           canvasContext,
           history: aiChatState.history.filter((m) => m.role !== "system"),
+          _portName: PORT_NAME,
         });
+
+        const response = await streamPromise;
+        try {
+          streamPort.disconnect();
+        } catch (_) {}
 
         removeThinkingIndicator();
 
@@ -1790,38 +1891,6 @@ function injectSidebar() {
         appendAIMessage("Response stopped.", { action: "chat" });
       });
     }
-
-    // Listen for streaming chunks and errors from background
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (msg.type === "AI_STREAM_CHUNK") {
-        updateStreamingMessage(msg.fullContent);
-      }
-      if (msg.type === "AI_STREAM_DONE") {
-        aiChatState.isStreaming = false;
-        sendBtn.style.display = "flex";
-        if (stopBtn) stopBtn.style.display = "none";
-
-        const fullContent = msg.fullContent || "";
-        const parsed = parseAIResponse(fullContent);
-
-        finalizeStreamingMessage(fullContent, parsed);
-
-        aiChatState.history.push({
-          role: "assistant",
-          content: fullContent,
-          parsed,
-          timestamp: Date.now(),
-        });
-        persistHistory();
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      }
-      if (msg.type === "AI_STREAM_ERROR") {
-        aiChatState.isStreaming = false;
-        sendBtn.style.display = "flex";
-        if (stopBtn) stopBtn.style.display = "none";
-        replaceThinkingWithError(msg.error);
-      }
-    });
 
     // ── Markdown renderer (minimal, no deps) ──
     function renderMarkdown(text) {
@@ -1951,16 +2020,46 @@ function injectSidebar() {
       const applyBtn = document.createElement("button");
       applyBtn.className = "eai-apply-btn";
       applyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Apply to Canvas`;
-      applyBtn.addEventListener("click", () => {
-        const result = applyElementsToCanvas(parsed.elements);
-        if (result.ok) {
-          applyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied!`;
-          applyBtn.classList.add("applied");
-          applyBtn.disabled = true;
-        } else {
-          applyBtn.textContent = "Error — retry?";
-        }
-      });
+
+      // Auto-apply elements immediately to canvas
+      const applyResult = applyElementsToCanvas(parsed.elements);
+      if (applyResult.ok) {
+        applyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied! (click to undo)`;
+        applyBtn.classList.add("applied");
+
+        // Allow undo by removing the last applied elements
+        applyBtn.addEventListener("click", () => {
+          try {
+            const existing = localStorage.getItem("excalidraw");
+            if (existing) {
+              const allElements = JSON.parse(existing);
+              const idsToRemove = parsed.elements.map((e) => e.id);
+              const filtered = allElements.filter(
+                (e) => !idsToRemove.includes(e.id),
+              );
+              localStorage.setItem("excalidraw", JSON.stringify(filtered));
+              window.dispatchEvent(
+                new StorageEvent("storage", { key: "excalidraw" }),
+              );
+              applyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Removed`;
+              applyBtn.disabled = true;
+            }
+          } catch (err) {
+            console.error("Failed to remove elements:", err);
+          }
+        });
+      } else {
+        applyBtn.textContent = "Error applying — retry?";
+        applyBtn.addEventListener("click", () => {
+          const retryResult = applyElementsToCanvas(parsed.elements);
+          if (retryResult.ok) {
+            applyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied!`;
+            applyBtn.classList.add("applied");
+            applyBtn.disabled = true;
+          }
+        });
+      }
+
       footer.appendChild(applyBtn);
       card.appendChild(footer);
       return card;
@@ -1975,18 +2074,21 @@ function injectSidebar() {
 
       const bubble = document.createElement("div");
       bubble.style.cssText =
-        "background: var(--surface); color: var(--muted); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 12px; border: 1px solid var(--border); display: flex; align-items: center; gap: 6px;";
+        "background: var(--surface); color: var(--muted); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 12px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px;";
       bubble.innerHTML = `
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;opacity:.6">
-          <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
-          <path d="M6 3v3l2 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-        </svg>
-        <span style="font-style:italic">Thinking</span>
-        <span style="display:inline-flex;gap:2px;margin-left:2px;">
-          <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite;"></span>
-          <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite 0.2s;"></span>
-          <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite 0.4s;"></span>
-        </span>`;
+        <div style="display:flex;align-items:center;gap:6px;">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;opacity:.6">
+            <circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M6 3v3l2 1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          <span style="font-style:italic">Thinking</span>
+          <span style="display:inline-flex;gap:2px;margin-left:2px;">
+            <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite;"></span>
+            <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite 0.2s;"></span>
+            <span style="width:4px;height:4px;background:currentColor;border-radius:50%;animation:thinkingDot 1.2s infinite 0.4s;"></span>
+          </span>
+        </div>
+        <div id="excalihub-ai-stream-bubble" style="color: var(--text); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border);"></div>`;
       wrapper.appendChild(bubble);
       messagesEl.appendChild(wrapper);
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -2124,16 +2226,17 @@ function injectSidebar() {
         }
       }
       if (bubble) {
-        // Show streamed content — plain text while streaming
-        bubble.innerHTML = "";
-        const textNode = document.createElement("span");
-        textNode.style.cssText =
-          "font-size: 12px; line-height: 1.6; color: var(--text); white-space: pre-wrap; word-break: break-word;";
-        textNode.textContent = content;
-        bubble.appendChild(textNode);
-        const cursor = document.createElement("span");
-        cursor.className = "eai-cursor";
-        bubble.appendChild(cursor);
+        // Check if content looks like JSON (diagram generation) — show skeleton
+        const trimmed = content.trimStart();
+        if (trimmed.startsWith("{")) {
+          bubble.innerHTML = `<span style="font-style:italic;color:var(--muted);">✦ Generating diagram…</span><span style="display:inline-flex;gap:3px;margin-left:6px;"><span style="width:4px;height:4px;background:var(--muted);border-radius:50%;animation:thinkingDot 1.2s infinite;"></span><span style="width:4px;height:4px;background:var(--muted);border-radius:50%;animation:thinkingDot 1.2s infinite 0.2s;"></span><span style="width:4px;height:4px;background:var(--muted);border-radius:50%;animation:thinkingDot 1.2s infinite 0.4s;"></span></span>`;
+        } else {
+          bubble.innerHTML = "";
+          bubble.appendChild(renderMarkdown(content));
+          const cursor = document.createElement("span");
+          cursor.className = "eai-cursor";
+          bubble.appendChild(cursor);
+        }
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
     }
@@ -2186,51 +2289,69 @@ function injectSidebar() {
         ? getExcalidrawScene().scene
         : null;
 
+      // Open a port for streaming
+      let streamPort = null;
+      const streamPromise = new Promise((resolve) => {
+        streamPort = chrome.runtime.connect({
+          name: "ai-stream-sidebar-resend",
+        });
+        streamPort.onMessage.addListener((portMsg) => {
+          if (portMsg.type === "chunk") {
+            updateStreamingMessage(portMsg.fullContent);
+          } else if (portMsg.type === "done") {
+            resolve({ content: portMsg.fullContent });
+          } else if (portMsg.type === "error") {
+            resolve({ error: portMsg.error });
+          }
+        });
+        streamPort.onDisconnect.addListener(() => {
+          resolve({ error: "Stream disconnected" });
+        });
+      });
+
+      chrome.runtime.sendMessage({
+        type: "AI_CHAT",
+        prompt: text,
+        canvasContext,
+        history: aiChatState.history.filter((m) => m.role !== "system"),
+        _portName: "ai-stream-sidebar-resend",
+      });
+
+      const response = await streamPromise;
       try {
-        const response = await chrome.runtime.sendMessage({
-          type: "AI_CHAT",
-          prompt: text,
-          canvasContext,
-          history: aiChatState.history.filter((m) => m.role !== "system"),
-        });
+        streamPort.disconnect();
+      } catch (_) {}
 
-        removeThinkingIndicator();
+      removeThinkingIndicator();
 
-        aiChatState.isStreaming = false;
-        sendBtn.style.display = "flex";
-        if (stopBtn) stopBtn.style.display = "none";
+      aiChatState.isStreaming = false;
+      sendBtn.style.display = "flex";
+      if (stopBtn) stopBtn.style.display = "none";
 
-        if (response?.error) {
-          appendErrorMessage(response.error);
-          return;
-        }
-
-        const fullContent = response?.content || "";
-        const parsed = parseAIResponse(fullContent);
-
-        if (parsed.action === "generate" || parsed.action === "improve") {
-          appendAIMessage(parsed.summary || fullContent, parsed);
-        } else {
-          appendAIMessage(
-            parsed.message || parsed.analysis || fullContent,
-            parsed,
-          );
-        }
-
-        aiChatState.history.push({
-          role: "assistant",
-          content: fullContent,
-          parsed,
-          timestamp: Date.now(),
-        });
-        persistHistory();
-      } catch (err) {
-        removeThinkingIndicator();
-        aiChatState.isStreaming = false;
-        sendBtn.style.display = "flex";
-        if (stopBtn) stopBtn.style.display = "none";
-        appendErrorMessage("Network error: " + err.message);
+      if (response?.error) {
+        appendErrorMessage(response.error);
+        return;
       }
+
+      const fullContent = response?.content || "";
+      const parsed = parseAIResponse(fullContent);
+
+      if (parsed.action === "generate" || parsed.action === "improve") {
+        appendAIMessage(parsed.summary || fullContent, parsed);
+      } else {
+        appendAIMessage(
+          parsed.message || parsed.analysis || fullContent,
+          parsed,
+        );
+      }
+
+      aiChatState.history.push({
+        role: "assistant",
+        content: fullContent,
+        parsed,
+        timestamp: Date.now(),
+      });
+      persistHistory();
 
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
@@ -3214,6 +3335,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === "REMOVE_ELEMENTS") {
+    try {
+      const existing = localStorage.getItem("excalidraw");
+      if (existing) {
+        const allElements = JSON.parse(existing);
+        const idsToRemove = msg.elementIds || [];
+        const filtered = allElements.filter((e) => !idsToRemove.includes(e.id));
+        localStorage.setItem("excalidraw", JSON.stringify(filtered));
+        window.dispatchEvent(
+          new StorageEvent("storage", { key: "excalidraw" }),
+        );
+        sendResponse({ ok: true });
+      } else {
+        sendResponse({ error: "No canvas data found" });
+      }
+    } catch (err) {
+      sendResponse({ error: err.message });
+    }
+    return true;
+  }
+
   if (msg.type === "GET_SCENE") {
     sendResponse(getExcalidrawScene());
   }
@@ -3251,7 +3393,7 @@ async function injectAIChat() {
   const settings = await chrome.runtime.sendMessage({
     type: "AI_GET_SETTINGS",
   });
-  if (!settings?.ok || !settings.settings.hasApiKey) return;
+  const hasApiKey = settings?.ok && settings.settings.hasApiKey;
 
   // Load saved history
   const savedHistory = await chrome.runtime.sendMessage({
@@ -3293,6 +3435,17 @@ async function injectAIChat() {
           <span style="color: var(--text, #e8edf2); font-size: 13px; font-weight: 600;">AI Assistant</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
+          <select id="excalihub-ai-model-select" title="Switch model" style="
+            background: var(--bg, #0d0f11); border: 1px solid var(--border, #252b33); color: var(--text, #e8edf2);
+            border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+            outline: none; max-width: 120px;
+          ">
+            <option value="openai/gpt-4o">GPT-4o</option>
+            <option value="openai/gpt-4o-mini">GPT-4o mini</option>
+            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+            <option value="google/gemini-2.0-flash-exp:free">Gemini 2.0 Flash</option>
+            <option value="meta-llama/llama-3.1-70b-instruct">Llama 3.1 70B</option>
+          </select>
           <button id="excalihub-ai-context-toggle" title="Include canvas context" style="
             background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 4px;
             padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif;
@@ -3357,7 +3510,39 @@ async function injectAIChat() {
   const messagesEl = document.getElementById("excalihub-ai-messages");
   const clearBtn = document.getElementById("excalihub-ai-clear");
   const contextToggle = document.getElementById("excalihub-ai-context-toggle");
+  const modelSelect = document.getElementById("excalihub-ai-model-select");
   const header = document.getElementById("excalihub-ai-header");
+
+  // Model selector: load saved model and wire change handler
+  if (modelSelect) {
+    // Load saved model on init
+    (async () => {
+      try {
+        const aiSettings = await chrome.runtime.sendMessage({
+          type: "AI_GET_SETTINGS",
+        });
+        if (aiSettings?.ok && aiSettings.settings.model) {
+          // Try to match the saved model; fall back to default
+          const savedModel = aiSettings.settings.model;
+          const option = modelSelect.querySelector(
+            `option[value="${savedModel}"]`,
+          );
+          if (option) {
+            modelSelect.value = savedModel;
+          }
+        }
+      } catch (_) {}
+    })();
+
+    modelSelect.addEventListener("change", () => {
+      chrome.runtime
+        .sendMessage({
+          type: "AI_SAVE_SETTINGS",
+          settings: { model: modelSelect.value },
+        })
+        .catch(() => {});
+    });
+  }
 
   // Trigger button hover effects
   trigger.addEventListener("mouseenter", () => {
@@ -3464,6 +3649,12 @@ async function injectAIChat() {
     const text = input.value.trim();
     if (!text || aiChatState.isStreaming) return;
 
+    // Check for API key first
+    if (!hasApiKey) {
+      appendFloatingSetupPrompt();
+      return;
+    }
+
     input.value = "";
     input.style.height = "auto";
 
@@ -3483,12 +3674,37 @@ async function injectAIChat() {
       timestamp: Date.now(),
     });
 
-    const response = await chrome.runtime.sendMessage({
+    // Open a port for streaming before sending
+    const PORT_NAME = "ai-stream-floating";
+    let streamPort = null;
+    const streamPromise = new Promise((resolve) => {
+      streamPort = chrome.runtime.connect({ name: PORT_NAME });
+      streamPort.onMessage.addListener((portMsg) => {
+        if (portMsg.type === "chunk") {
+          updateFloatingStreamingMessage(portMsg.fullContent);
+        } else if (portMsg.type === "done") {
+          resolve({ content: portMsg.fullContent });
+        } else if (portMsg.type === "error") {
+          resolve({ error: portMsg.error });
+        }
+      });
+      streamPort.onDisconnect.addListener(() => {
+        resolve({ error: "Stream disconnected" });
+      });
+    });
+
+    chrome.runtime.sendMessage({
       type: "AI_CHAT",
       prompt: text,
       canvasContext,
       history: aiChatState.history.filter((m) => m.role !== "system"),
+      _portName: PORT_NAME,
     });
+
+    const response = await streamPromise;
+    try {
+      streamPort.disconnect();
+    } catch (_) {}
 
     aiChatState.isStreaming = false;
     sendBtn.style.display = "flex";
@@ -3514,11 +3730,7 @@ async function injectAIChat() {
         ? parsed.message || parsed.analysis || fullContent
         : parsed.summary || fullContent;
 
-    // Convert streaming element to final message
-    const streamBubble = document.getElementById("excalihub-ai-stream-bubble");
-    if (streamBubble) streamBubble.textContent = displayText;
-    const streamEl = document.getElementById("excalihub-ai-streaming");
-    if (streamEl) streamEl.id = "";
+    finalizeFloatingStreamingMessage(fullContent, parsed);
 
     aiChatState.history.push({
       role: "assistant",
@@ -3526,13 +3738,6 @@ async function injectAIChat() {
       parsed,
       timestamp: Date.now(),
     });
-
-    // If generate/improve, convert the streaming message to a card
-    if (parsed.action === "generate" || parsed.action === "improve") {
-      const lastMsg = messagesEl.lastElementChild;
-      if (lastMsg) lastMsg.remove();
-      appendFloatingAIMessage(displayText, parsed);
-    }
 
     chrome.storage.local
       .set({
@@ -3552,26 +3757,153 @@ async function injectAIChat() {
     stopBtn.style.display = "none";
   });
 
-  // Streaming listeners
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === "AI_STREAM_CHUNK") {
-      const bubble = document.getElementById("excalihub-ai-stream-bubble");
-      if (bubble) {
-        bubble.textContent = msg.fullContent;
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+  // Floating panel streaming message helpers
+  function updateFloatingStreamingMessage(content) {
+    let bubble = document.getElementById("excalihub-ai-stream-bubble");
+    if (!bubble) {
+      const thinking = document.getElementById("excalihub-ai-streaming");
+      if (thinking) {
+        thinking.id = "excalihub-ai-floating-streaming";
+        const b = document.createElement("div");
+        b.id = "excalihub-ai-stream-bubble";
+        b.style.cssText =
+          "background: var(--surface, #161a1f); padding: 8px 12px; border-radius: 12px 12px 12px 4px; border: 1px solid var(--border, #252b33);";
+        thinking.innerHTML = "";
+        thinking.appendChild(b);
+        bubble = b;
       }
     }
-    if (msg.type === "AI_STREAM_ERROR") {
-      const bubble = document.getElementById("excalihub-ai-stream-bubble");
-      if (bubble) {
-        bubble.textContent = "Error: " + msg.error;
-        bubble.style.color = "var(--error, #f76f6f)";
+    if (bubble) {
+      // Check if content looks like JSON (diagram generation) — show skeleton
+      const trimmed = content.trimStart();
+      if (trimmed.startsWith("{")) {
+        bubble.innerHTML = `<span style="font-style:italic;color:var(--muted,#6b7685);">✦ Generating diagram…</span><span style="display:inline-flex;gap:3px;margin-left:6px;"><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite;"></span><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite 0.2s;"></span><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite 0.4s;"></span></span>`;
+      } else {
+        bubble.innerHTML = "";
+        const textNode = document.createElement("span");
+        textNode.style.cssText =
+          "font-size: 13px; line-height: 1.5; color: var(--text, #e8edf2); white-space: pre-wrap; word-break: break-word;";
+        textNode.textContent = content;
+        bubble.appendChild(textNode);
+        const cursor = document.createElement("span");
+        cursor.className = "eai-cursor";
+        bubble.appendChild(cursor);
       }
-      aiChatState.isStreaming = false;
-      sendBtn.style.display = "flex";
-      stopBtn.style.display = "none";
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
-  });
+  }
+
+  function finalizeFloatingStreamingMessage(fullContent, parsed) {
+    const streaming = document.getElementById(
+      "excalihub-ai-floating-streaming",
+    );
+    if (streaming) {
+      streaming.id = "";
+      streaming.innerHTML = "";
+      streaming.style.cssText = "align-self: flex-start; max-width: 90%;";
+    }
+
+    if (parsed.action === "generate" || parsed.action === "improve") {
+      // Remove streaming element and append gen card
+      const streamEl =
+        document.getElementById("excalihub-ai-floating-streaming") || streaming;
+      if (streamEl) {
+        streamEl.innerHTML = "";
+        const card = buildFloatingGenerateCard(parsed);
+        streamEl.appendChild(card);
+      }
+      return;
+    }
+
+    // Plain text / analyze — render with markdown
+    const wrapper =
+      document.getElementById("excalihub-ai-floating-streaming") || streaming;
+    if (wrapper) {
+      wrapper.innerHTML = "";
+      const text =
+        parsed.action === "analyze"
+          ? parsed.analysis || fullContent
+          : parsed.message || fullContent;
+      const bubble = document.createElement("div");
+      bubble.style.cssText =
+        "background: var(--surface, #161a1f); padding: 8px 12px; border-radius: 12px 12px 12px 4px; border: 1px solid var(--border, #252b33);";
+      bubble.appendChild(renderFloatingMarkdown(text));
+      wrapper.appendChild(bubble);
+    }
+  }
+
+  function buildFloatingGenerateCard(parsed) {
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background: var(--surface, #161a1f); border: 1px solid var(--border, #252b33); border-radius: 10px; overflow: hidden;";
+    const label = document.createElement("div");
+    label.style.cssText =
+      "padding: 8px 12px; font-size: 11px; color: var(--muted, #6b7685); border-bottom: 1px solid var(--border, #252b33);";
+    label.textContent =
+      (parsed.action === "generate" ? "Generated" : "Improved") +
+      " diagram" +
+      (parsed.summary ? " — " + parsed.summary : "");
+    card.appendChild(label);
+
+    const actions = document.createElement("div");
+    actions.style.cssText = "padding: 10px 12px; display: flex; gap: 8px;";
+    const applyBtn = document.createElement("button");
+    applyBtn.style.cssText =
+      "flex: 1; background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;";
+    applyBtn.textContent = "Apply to Canvas";
+
+    const result = applyElementsToCanvas(parsed.elements);
+    if (result.ok) {
+      applyBtn.textContent = "Applied!";
+      applyBtn.style.color = "var(--muted, #6b7685)";
+      applyBtn.style.borderColor = "var(--border, #252b33)";
+      applyBtn.style.background = "var(--bg, #0d0f11)";
+      applyBtn.disabled = true;
+    } else {
+      applyBtn.textContent = "Error — retry?";
+      applyBtn.addEventListener("click", () => {
+        const retryResult = applyElementsToCanvas(parsed.elements);
+        if (retryResult.ok) {
+          applyBtn.textContent = "Applied!";
+          applyBtn.disabled = true;
+        }
+      });
+    }
+
+    actions.appendChild(applyBtn);
+    const countLabel = document.createElement("span");
+    countLabel.style.cssText =
+      "display: flex; align-items: center; font-size: 11px; color: var(--muted, #6b7685);";
+    countLabel.textContent = parsed.elements.length + " elements";
+    actions.appendChild(countLabel);
+    card.appendChild(actions);
+    return card;
+  }
+
+  function renderFloatingMarkdown(text) {
+    const el = document.createElement("div");
+    el.style.cssText =
+      "font-size:13px;line-height:1.6;word-break:break-word;color:var(--text,#e8edf2);";
+    let html = text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(
+        /`([^`]+)`/g,
+        `<code style="font-family:'DM Mono',monospace;font-size:11px;background:rgba(0,0,0,.2);border-radius:3px;padding:1px 4px;">$1</code>`,
+      )
+      .replace(/^[-•] (.+)$/gm, "<li>$1</li>")
+      .replace(
+        /(<li>.*<\/li>)/gs,
+        "<ul style='margin:3px 0 3px 14px;padding:0'>$1</ul>",
+      )
+      .replace(/\n{2,}/g, "</p><p style='margin:0 0 4px'>")
+      .replace(/\n/g, "<br>");
+    el.innerHTML = "<p style='margin:0 0 4px'>" + html + "</p>";
+    return el;
+  }
 
   function appendFloatingUserMessage(text) {
     const div = document.createElement("div");
@@ -3590,64 +3922,47 @@ async function injectAIChat() {
     bubble.style.cssText =
       "background: var(--surface, #161a1f); color: var(--muted, #6b7685); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid var(--border, #252b33); display: flex; align-items: center; gap: 8px;";
     bubble.innerHTML = `<span>Thinking</span><span style="display:inline-flex;gap:3px;"><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite;"></span><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite 0.2s;"></span><span style="width:4px;height:4px;background:var(--muted,#6b7685);border-radius:50%;animation:thinkingDot 1.2s infinite 0.4s;"></span></span>`;
-    bubble.id = "excalihub-ai-stream-bubble";
     wrapper.appendChild(bubble);
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
-  function appendFloatingAIMessage(text, parsed) {
+  function appendFloatingSetupPrompt() {
+    // Remove any existing setup prompt
+    const existing = document.getElementById("excalihub-ai-setup-prompt");
+    if (existing) existing.remove();
+
     const wrapper = document.createElement("div");
+    wrapper.id = "excalihub-ai-setup-prompt";
     wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
 
-    if (
-      parsed &&
-      (parsed.action === "generate" || parsed.action === "improve")
-    ) {
-      const card = document.createElement("div");
-      card.style.cssText =
-        "background: var(--surface, #161a1f); border: 1px solid var(--border, #252b33); border-radius: 10px; overflow: hidden;";
-      const label = document.createElement("div");
-      label.style.cssText =
-        "padding: 8px 12px; font-size: 11px; color: var(--muted, #6b7685); border-bottom: 1px solid var(--border, #252b33);";
-      label.textContent =
-        (parsed.action === "generate" ? "Generated" : "Improved") +
-        " diagram" +
-        (parsed.summary ? " — " + parsed.summary : "");
-      card.appendChild(label);
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background: var(--surface, #161a1f); border: 1px solid #5c1c1c; border-radius: 10px; padding: 12px;";
 
-      const actions = document.createElement("div");
-      actions.style.cssText = "padding: 10px 12px; display: flex; gap: 8px;";
-      const applyBtn = document.createElement("button");
-      applyBtn.style.cssText =
-        "flex: 1; background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;";
-      applyBtn.textContent = "Apply to Canvas";
-      applyBtn.addEventListener("click", () => {
-        const result = applyElementsToCanvas(parsed.elements);
-        if (result.ok) {
-          applyBtn.textContent = "Applied!";
-          applyBtn.style.color = "var(--muted, #6b7685)";
-          applyBtn.style.borderColor = "var(--border, #252b33)";
-          applyBtn.style.background = "var(--bg, #0d0f11)";
-          applyBtn.disabled = true;
-        }
-      });
-      actions.appendChild(applyBtn);
-      const countLabel = document.createElement("span");
-      countLabel.style.cssText =
-        "display: flex; align-items: center; font-size: 11px; color: var(--muted, #6b7685);";
-      countLabel.textContent = parsed.elements.length + " elements";
-      actions.appendChild(countLabel);
-      card.appendChild(actions);
-      wrapper.appendChild(card);
-    } else {
-      const bubble = document.createElement("div");
-      bubble.style.cssText =
-        "background: var(--surface, #161a1f); color: var(--text, #e8edf2); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid var(--border, #252b33); white-space: pre-wrap; word-break: break-word;";
-      bubble.textContent = text;
-      wrapper.appendChild(bubble);
-    }
+    const title = document.createElement("div");
+    title.style.cssText =
+      "font-size: 13px; font-weight: 600; color: #f76f6f; margin-bottom: 4px;";
+    title.textContent = "⚡ AI Setup Required";
 
+    const desc = document.createElement("div");
+    desc.style.cssText =
+      "font-size: 12px; color: var(--muted, #6b7685); margin-bottom: 10px; line-height: 1.5;";
+    desc.textContent =
+      "Add your OpenRouter API key in settings to start generating diagrams.";
+
+    const link = document.createElement("a");
+    link.style.cssText =
+      "display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #4f8ef7; cursor: pointer; text-decoration: none; font-weight: 600;";
+    link.textContent = "Open Settings →";
+    link.addEventListener("click", () => {
+      chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+    });
+
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(link);
+    wrapper.appendChild(card);
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
@@ -3659,7 +3974,23 @@ async function injectAIChat() {
       if (msg.role === "user") {
         appendFloatingUserMessage(msg.content);
       } else if (msg.role === "assistant") {
-        appendFloatingAIMessage(msg.content, msg.parsed);
+        const wrapper = document.createElement("div");
+        wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
+        if (
+          msg.parsed &&
+          (msg.parsed.action === "generate" || msg.parsed.action === "improve")
+        ) {
+          wrapper.appendChild(buildFloatingGenerateCard(msg.parsed));
+        } else {
+          const text =
+            msg.parsed?.message || msg.parsed?.analysis || msg.content;
+          const bubble = document.createElement("div");
+          bubble.style.cssText =
+            "background: var(--surface, #161a1f); color: var(--text, #e8edf2); padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid var(--border, #252b33);";
+          bubble.appendChild(renderFloatingMarkdown(text));
+          wrapper.appendChild(bubble);
+        }
+        messagesEl.appendChild(wrapper);
       }
     }
     messagesEl.scrollTop = messagesEl.scrollHeight;

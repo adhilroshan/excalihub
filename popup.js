@@ -393,14 +393,22 @@ function renderMarkdownInto(el, text) {
   const div = document.createElement("div");
   div.style.cssText = "font-size:11px;line-height:1.6;word-break:break-word;";
   let html = text
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
-    .replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g,"<em>$1</em>")
-    .replace(/`([^`]+)`/g,`<code style="font-family:'DM Mono',monospace;font-size:10px;background:rgba(0,0,0,.2);border-radius:3px;padding:1px 4px;">$1</code>`)
-    .replace(/^[-•] (.+)$/gm,"<li>$1</li>")
-    .replace(/(<li>.*<\/li>)/gs,"<ul style='margin:3px 0 3px 14px;padding:0'>$1</ul>")
-    .replace(/\n{2,}/g,"</p><p style='margin:0 0 4px'>")
-    .replace(/\n/g,"<br>");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(
+      /`([^`]+)`/g,
+      `<code style="font-family:'DM Mono',monospace;font-size:10px;background:rgba(0,0,0,.2);border-radius:3px;padding:1px 4px;">$1</code>`,
+    )
+    .replace(/^[-•] (.+)$/gm, "<li>$1</li>")
+    .replace(
+      /(<li>.*<\/li>)/gs,
+      "<ul style='margin:3px 0 3px 14px;padding:0'>$1</ul>",
+    )
+    .replace(/\n{2,}/g, "</p><p style='margin:0 0 4px'>")
+    .replace(/\n/g, "<br>");
   div.innerHTML = "<p style='margin:0 0 4px'>" + html + "</p>";
   el.appendChild(div);
 }
@@ -443,15 +451,20 @@ function appendPopupMessage(text, type) {
     row.appendChild(bubble);
     // Copy button
     const copyRow = document.createElement("div");
-    copyRow.style.cssText = "display:flex;justify-content:flex-start;margin-top:3px;";
+    copyRow.style.cssText =
+      "display:flex;justify-content:flex-start;margin-top:3px;";
     const copyBtn = document.createElement("button");
-    copyBtn.style.cssText = "background:none;border:none;color:var(--muted);font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;padding:1px 4px;border-radius:3px;transition:color 0.15s;";
+    copyBtn.style.cssText =
+      "background:none;border:none;color:var(--muted);font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;padding:1px 4px;border-radius:3px;transition:color 0.15s;";
     copyBtn.textContent = "Copy";
     copyBtn.addEventListener("click", () => {
       navigator.clipboard.writeText(text).then(() => {
         copyBtn.textContent = "Copied!";
         copyBtn.style.color = "var(--success)";
-        setTimeout(() => { copyBtn.textContent = "Copy"; copyBtn.style.color = ""; }, 1500);
+        setTimeout(() => {
+          copyBtn.textContent = "Copy";
+          copyBtn.style.color = "";
+        }, 1500);
       });
     });
     copyRow.appendChild(copyBtn);
@@ -478,22 +491,26 @@ function appendPopupGenCard(parsed) {
   row.style.cssText = "align-self:flex-start;margin-bottom:12px;width:100%;";
 
   const card = document.createElement("div");
-  card.style.cssText = "background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;";
+  card.style.cssText =
+    "background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;";
 
   const header = document.createElement("div");
-  header.style.cssText = "padding:6px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;";
+  header.style.cssText =
+    "padding:6px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;";
   const badge = document.createElement("span");
-  badge.style.cssText = `font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:${isImprove?"#1a2a1a":"var(--accent-dim)"};color:${isImprove?"#4ade80":"var(--accent)"};`;
+  badge.style.cssText = `font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:3px;background:${isImprove ? "#1a2a1a" : "var(--accent-dim)"};color:${isImprove ? "#4ade80" : "var(--accent)"};`;
   badge.textContent = isImprove ? "Improved" : "Generated";
   const count = document.createElement("span");
   count.style.cssText = "font-size:11px;color:var(--muted);";
   count.textContent = parsed.elements.length + " elements";
-  header.appendChild(badge); header.appendChild(count);
+  header.appendChild(badge);
+  header.appendChild(count);
   card.appendChild(header);
 
   if (parsed.summary) {
     const sum = document.createElement("div");
-    sum.style.cssText = "padding:5px 10px;font-size:11px;color:var(--text);border-bottom:1px solid var(--border);line-height:1.4;";
+    sum.style.cssText =
+      "padding:5px 10px;font-size:11px;color:var(--text);border-bottom:1px solid var(--border);line-height:1.4;";
     sum.textContent = parsed.summary;
     card.appendChild(sum);
   }
@@ -501,18 +518,53 @@ function appendPopupGenCard(parsed) {
   const footer = document.createElement("div");
   footer.style.cssText = "padding:7px 10px;";
   const applyBtn = document.createElement("button");
-  applyBtn.style.cssText = "width:100%;background:linear-gradient(135deg,#1a2f1a,#1e3a1e);border:1px solid #2d5a2d;color:#4ade80;border-radius:6px;padding:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:4px;transition:opacity .15s;";
+  applyBtn.style.cssText =
+    "width:100%;background:linear-gradient(135deg,#1a2f1a,#1e3a1e);border:1px solid #2d5a2d;color:#4ade80;border-radius:6px;padding:6px;cursor:pointer;font-size:11px;font-weight:600;font-family:'DM Sans',sans-serif;display:flex;align-items:center;justify-content:center;gap:4px;transition:opacity .15s;";
   applyBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Apply to Canvas`;
-  applyBtn.addEventListener("click", async () => {
+
+  // Auto-apply elements immediately
+  (async () => {
     const tab = await getActiveExcalidrawTab();
-    if (!tab) { applyBtn.textContent = "No Excalidraw tab open"; return; }
-    chrome.tabs.sendMessage(tab.id, { type: "APPLY_ELEMENTS", elements: parsed.elements });
-    applyBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied!`;
-    applyBtn.style.background = "var(--bg)";
-    applyBtn.style.borderColor = "var(--border)";
-    applyBtn.style.color = "var(--muted)";
-    applyBtn.disabled = true;
-  });
+    if (!tab) {
+      applyBtn.textContent = "No Excalidraw tab open";
+      return;
+    }
+
+    // Send apply message to content script
+    chrome.tabs.sendMessage(
+      tab.id,
+      { type: "APPLY_ELEMENTS", elements: parsed.elements },
+      (response) => {
+        if (response && response.ok) {
+          applyBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied! (click to undo)`;
+          applyBtn.style.background = "var(--bg)";
+          applyBtn.style.borderColor = "var(--border)";
+          applyBtn.style.color = "var(--muted)";
+
+          // Allow undo
+          applyBtn.addEventListener("click", () => {
+            chrome.tabs.sendMessage(tab.id, {
+              type: "REMOVE_ELEMENTS",
+              elementIds: parsed.elements.map((e) => e.id),
+            });
+            applyBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Removed`;
+            applyBtn.disabled = true;
+          });
+        } else {
+          applyBtn.textContent = "Error — retry?";
+          applyBtn.addEventListener("click", () => {
+            chrome.tabs.sendMessage(tab.id, {
+              type: "APPLY_ELEMENTS",
+              elements: parsed.elements,
+            });
+            applyBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Applied!`;
+            applyBtn.disabled = true;
+          });
+        }
+      },
+    );
+  })();
+
   footer.appendChild(applyBtn);
   card.appendChild(footer);
   row.appendChild(card);
@@ -531,20 +583,32 @@ function renderPopupSuggestions() {
   ];
   const wrap = document.createElement("div");
   wrap.id = "ai-popup-suggestions";
-  wrap.style.cssText = "padding:4px 0 8px;display:flex;flex-direction:column;gap:5px;";
+  wrap.style.cssText =
+    "padding:4px 0 8px;display:flex;flex-direction:column;gap:5px;";
   const title = document.createElement("div");
-  title.style.cssText = "font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px;";
+  title.style.cssText =
+    "font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:2px;";
   title.textContent = "Try asking…";
   wrap.appendChild(title);
-  SUGGESTIONS.forEach(s => {
+  SUGGESTIONS.forEach((s) => {
     const chip = document.createElement("button");
-    chip.style.cssText = "background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;transition:border-color .15s,color .15s;";
+    chip.style.cssText =
+      "background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 8px;font-size:10px;cursor:pointer;font-family:'DM Sans',sans-serif;text-align:left;transition:border-color .15s,color .15s;";
     chip.textContent = s;
-    chip.addEventListener("mouseenter", () => { chip.style.borderColor="var(--accent)"; chip.style.color="var(--accent)"; });
-    chip.addEventListener("mouseleave", () => { chip.style.borderColor="var(--border)"; chip.style.color="var(--text)"; });
+    chip.addEventListener("mouseenter", () => {
+      chip.style.borderColor = "var(--accent)";
+      chip.style.color = "var(--accent)";
+    });
+    chip.addEventListener("mouseleave", () => {
+      chip.style.borderColor = "var(--border)";
+      chip.style.color = "var(--text)";
+    });
     chip.addEventListener("click", () => {
       const input = document.getElementById("ai-chat-input");
-      if (input) { input.value = s; input.focus(); }
+      if (input) {
+        input.value = s;
+        input.focus();
+      }
       wrap.remove();
     });
     wrap.appendChild(chip);
@@ -571,6 +635,37 @@ function appendPopupThinking() {
   return div;
 }
 
+function updatePopupStreamingMessage(content, thinkingDiv) {
+  if (!thinkingDiv) return;
+  // Check if content looks like JSON (diagram generation) — show skeleton
+  const trimmed = content.trimStart();
+  if (trimmed.startsWith("{")) {
+    thinkingDiv.innerHTML = `
+      <span style="font-style:italic;">✦ Generating diagram…</span>
+      <span style="display: inline-flex; gap: 3px;">
+        <span style="width: 4px; height: 4px; background: var(--muted); border-radius: 50%; animation: thinkingBounce 1.2s infinite;"></span>
+        <span style="width: 4px; height: 4px; background: var(--muted); border-radius: 50%; animation: thinkingBounce 1.2s infinite 0.2s;"></span>
+        <span style="width: 4px; height: 4px; background: var(--muted); border-radius: 50%; animation: thinkingBounce 1.2s infinite 0.4s;"></span>
+      </span>
+    `;
+  } else {
+    // Show streamed text progressively
+    thinkingDiv.innerHTML = "";
+    thinkingDiv.className = "ai-chat-msg assistant";
+    const span = document.createElement("span");
+    span.textContent = content;
+    span.style.cssText = "white-space:pre-wrap;word-break:break-word;";
+    thinkingDiv.appendChild(span);
+    const cursor = document.createElement("span");
+    cursor.className = "eai-cursor";
+    cursor.style.cssText =
+      "display:inline-block;width:2px;height:14px;background:var(--accent);border-radius:1px;margin-left:2px;vertical-align:text-bottom;animation:eai-blink 0.8s step-end infinite;";
+    thinkingDiv.appendChild(cursor);
+  }
+  const container = document.getElementById("ai-chat-messages");
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
 async function handlePopupSend(text) {
   if (!text || popupChatState.isStreaming) return;
 
@@ -581,7 +676,10 @@ async function handlePopupSend(text) {
   showChatPanel();
 
   const inputEl = document.getElementById("ai-chat-input");
-  if (inputEl) { inputEl.value = ""; inputEl.style.height = "auto"; }
+  if (inputEl) {
+    inputEl.value = "";
+    inputEl.style.height = "auto";
+  }
 
   appendPopupMessage(text, "user");
   const thinkingDiv = appendPopupThinking();
@@ -596,6 +694,18 @@ async function handlePopupSend(text) {
   const sendBtn = document.getElementById("ai-chat-send");
   if (sendBtn) sendBtn.disabled = true;
 
+  // Check for API key first
+  const aiSettings = await chrome.runtime.sendMessage({
+    type: "AI_GET_SETTINGS",
+  });
+  if (!aiSettings?.ok || !aiSettings.settings.hasApiKey) {
+    if (thinkingDiv) thinkingDiv.remove();
+    popupChatState.isStreaming = false;
+    if (sendBtn) sendBtn.disabled = false;
+    appendPopupSetupPrompt();
+    return;
+  }
+
   const tab = await getActiveExcalidrawTab();
   let canvasContext = null;
   if (tab && popupChatState.contextIncluded) {
@@ -607,12 +717,39 @@ async function handlePopupSend(text) {
     } catch (_) {}
   }
 
-  const response = await chrome.runtime.sendMessage({
+  // Open a port for streaming before sending the message
+  const PORT_NAME = "ai-stream-popup";
+  let streamPort = null;
+  const streamPromise = new Promise((resolve) => {
+    streamPort = chrome.runtime.connect({ name: PORT_NAME });
+    let accumulatedContent = "";
+    streamPort.onMessage.addListener((portMsg) => {
+      if (portMsg.type === "chunk") {
+        accumulatedContent = portMsg.fullContent;
+        updatePopupStreamingMessage(portMsg.fullContent, thinkingDiv);
+      } else if (portMsg.type === "done") {
+        resolve({ content: portMsg.fullContent });
+      } else if (portMsg.type === "error") {
+        resolve({ error: portMsg.error });
+      }
+    });
+    streamPort.onDisconnect.addListener(() => {
+      resolve({ error: "Stream disconnected" });
+    });
+  });
+
+  chrome.runtime.sendMessage({
     type: "AI_CHAT",
     prompt: text,
     canvasContext,
     history: popupChatState.history.filter((m) => m.role !== "system"),
+    _portName: PORT_NAME,
   });
+
+  const response = await streamPromise;
+  try {
+    streamPort.disconnect();
+  } catch (_) {}
 
   popupChatState.isStreaming = false;
   if (sendBtn) sendBtn.disabled = false;
@@ -625,11 +762,17 @@ async function handlePopupSend(text) {
     // Parse the AI response to check for generate/improve actions
     let parsed = null;
     try {
-      const jsonMatch = fullContent.match(/\{[\s\S]*\}/);
+      const jsonMatch = fullContent.match(
+        /\{[\s\S]*"action"\s*:\s*"(generate|improve|analyze|chat)"[\s\S]*\}/,
+      );
       if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
     } catch (_) {}
 
-    if (parsed && (parsed.action === "generate" || parsed.action === "improve") && Array.isArray(parsed.elements)) {
+    if (
+      parsed &&
+      (parsed.action === "generate" || parsed.action === "improve") &&
+      Array.isArray(parsed.elements)
+    ) {
       appendPopupGenCard(parsed);
     } else {
       appendPopupMessage(fullContent, "assistant");
@@ -650,6 +793,44 @@ async function handlePopupSend(text) {
   if (container) container.scrollTop = container.scrollHeight;
 }
 
+function appendPopupSetupPrompt() {
+  const container = document.getElementById("ai-chat-messages");
+  if (!container) return;
+
+  const row = document.createElement("div");
+  row.style.cssText = "align-self:flex-start;margin-bottom:12px;width:100%;";
+
+  const card = document.createElement("div");
+  card.style.cssText =
+    "background:var(--surface);border:1px solid #5c1c1c;border-radius:10px;padding:12px;";
+
+  const title = document.createElement("div");
+  title.style.cssText =
+    "font-size:13px;font-weight:600;color:var(--error);margin-bottom:4px;";
+  title.textContent = "⚡ AI Setup Required";
+
+  const desc = document.createElement("div");
+  desc.style.cssText =
+    "font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.5;";
+  desc.textContent =
+    "Add your OpenRouter API key in settings to start generating diagrams.";
+
+  const link = document.createElement("a");
+  link.style.cssText =
+    "display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--accent);cursor:pointer;text-decoration:none;font-weight:600;";
+  link.textContent = "Open Settings →";
+  link.addEventListener("click", () => {
+    chrome.runtime.openOptionsPage();
+  });
+
+  card.appendChild(title);
+  card.appendChild(desc);
+  card.appendChild(link);
+  row.appendChild(card);
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
 // Init chat panel
 function initPopupChat() {
   if (popupChatState.initialized) return;
@@ -665,7 +846,8 @@ function initPopupChat() {
           container.innerHTML = "";
           for (const msg of popupChatState.history) {
             if (msg.role === "user") appendPopupMessage(msg.content, "user");
-            else if (msg.role === "assistant") appendPopupMessage(msg.content, "assistant");
+            else if (msg.role === "assistant")
+              appendPopupMessage(msg.content, "assistant");
           }
         }
       } else {
