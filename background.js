@@ -939,3 +939,361 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 // Setup auto-save on service worker startup
 setupAutoSave();
+
+// ─── AI Integration ──────────────────────────────────────────────────────────
+
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+const EXCALIDRAW_SYSTEM_PROMPT = `You are an Excalidraw diagram assistant integrated into a Chrome extension called ExcaliHub. You help users create, analyze, and improve diagrams.
+
+When generating diagrams, respond ONLY with valid JSON in this exact format:
+{
+  "action": "generate",
+  "elements": [
+    {
+      "type": "rectangle|ellipse|diamond|text|line|arrow",
+      "x": <number>,
+      "y": <number>,
+      "width": <number>,
+      "height": <number>,
+      "strokeColor": "<hex>",
+      "backgroundColor": "<hex or transparent>",
+      "strokeWidth": <number>,
+      "roughness": <0|1|2>,
+      "opacity": <100>,
+      "angle": <0>,
+      "fillStyle": "<solid|hachure|cross-hatch>",
+      "strokeStyle": "<solid|dashed|dotted>",
+      "roundness": null or { "type": 3 },
+      "text": "<only for text type>",
+      "fontSize": <number, only for text>,
+      "fontFamily": <1|2|3|4|5>,
+      "textAlign": "<left|center|right, only for text>",
+      "verticalAlign": "<top|middle, only for text with container>",
+      "points": "<array of [x,y] for line/arrow>",
+      "startBinding": null,
+      "endBinding": null,
+      "startArrowhead": null,
+      "endArrowhead": "<arrow for arrow type>",
+      "groupIds": [],
+      "boundElements": null,
+      "locked": false
+    }
+  ]
+}
+
+Font families: 1=Virgil(hand), 2=Helvetica(sans), 3=Cascadia(mono), 4=Excalidraw(sans), 5=Nunito
+Roughness: 0=sharp/architect, 1=round/artist(default), 2=funky/cartoonist
+
+When analyzing diagrams, respond with:
+{
+  "action": "analyze",
+  "analysis": "<markdown explanation>"
+}
+
+When improving diagrams, respond with:
+{
+  "action": "improve",
+  "elements": [<complete updated elements array>],
+  "summary": "<what you changed>"
+}
+
+For general questions, respond with:
+{
+  "action": "chat",
+  "message": "<markdown response>"
+}
+
+IMPORTANT: Always respond with valid JSON. Use reasonable coordinates (x: 0-2000, y: 0-1000). Text elements must have a "text" field. Lines/arrows must have a "points" array like [[0,0],[100,0]].`;
+
+function compressCanvasContext(scene) {
+  if (!scene || !scene.elements || scene.elements.length === 0) return null;
+  const elements = scene.elements
+    .filter((el) => !el.isDeleted)
+    .slice(0, 200)
+    .map((el) => {
+      const compressed = {
+        type: el.type,
+        x: Math.round(el.x),
+        y: Math.round(el.y),
+        width: Math.round(el.width || 0),
+        height: Math.round(el.height || 0),
+      };
+      if (el.text) compressed.text = el.text.slice(0, 100);
+      if (el.strokeColor) compressed.strokeColor = el.strokeColor;
+      if (el.backgroundColor && el.backgroundColor !== "transparent")
+        compressed.backgroundColor = el.backgroundColor;
+      if (el.points) compressed.points = el.points;
+      if (el.boundElements) compressed.boundElements = el.boundElements;
+      if (el.type === "arrow") {
+        compressed.startArrowhead = el.startArrowhead;
+        compressed.endArrowhead = el.endArrowhead;
+      }
+      return compressed;
+    });
+  return JSON.stringify({ elements, elementCount: elements.length });
+}
+
+async function callOpenRouter(messages, settings) {
+  const apiKey = settings.aiApiKey;
+  if (!apiKey) throw new Error("No API key configured");
+
+  const body = {
+    model: settings.aiModel || "openai/gpt-4o",
+    messages,
+    max_tokens: settings.aiMaxTokens || 2048,
+    temperature: settings.aiTemperature ?? 0.3,
+    stream: true,
+  };
+
+  const resp = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://excalidraw.com",
+      "X-Title": "ExcaliHub AI",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (resp.status === 401) throw new Error("Invalid API key");
+  if (resp.status === 429) throw new Error("Rate limited — please wait a moment");
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error: ${resp.status}`);
+  }
+
+  return resp.body;
+}
+
+let activeAIStream = null;
+
+function handleAIStream(stream, sendResponse) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = "";
+  let buffer = "";
+
+  activeAIStream = reader;
+
+  const processChunk = async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              fullContent += delta;
+              chrome.runtime.sendMessage({
+                type: "AI_STREAM_CHUNK",
+                chunk: delta,
+                fullContent,
+              }).catch(() => {});
+            }
+          } catch {}
+        }
+      }
+
+      chrome.runtime.sendMessage({
+        type: "AI_STREAM_DONE",
+        fullContent,
+      }).catch(() => {});
+
+      sendResponse({ ok: true, content: fullContent });
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        chrome.runtime.sendMessage({
+          type: "AI_STREAM_ERROR",
+          error: err.message,
+        }).catch(() => {});
+        sendResponse({ error: err.message });
+      }
+    } finally {
+      activeAIStream = null;
+    }
+  };
+
+  processChunk();
+}
+
+// ─── AI Message Handlers ────────────────────────────────────────────────────
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === "AI_CHAT") {
+    (async () => {
+      try {
+        const settings = await chrome.storage.sync.get([
+          "aiApiKey",
+          "aiModel",
+          "aiMaxTokens",
+          "aiTemperature",
+          "aiContextMode",
+        ]);
+
+        if (!settings.aiApiKey) {
+          sendResponse({ error: "No API key. Open extension settings to add one." });
+          return;
+        }
+
+        const messages = [{ role: "system", content: EXCALIDRAW_SYSTEM_PROMPT }];
+
+        if (msg.history && msg.history.length > 0) {
+          const recentHistory = msg.history.slice(-20);
+          for (const h of recentHistory) {
+            messages.push({ role: h.role, content: h.content });
+          }
+        }
+
+        let userContent = msg.prompt;
+        if (msg.canvasContext) {
+          const contextStr = compressCanvasContext(msg.canvasContext);
+          if (contextStr) {
+            userContent += `\n\nCurrent canvas state:\n${contextStr}`;
+          }
+        }
+        messages.push({ role: "user", content: userContent });
+
+        const stream = await callOpenRouter(messages, settings);
+        handleAIStream(stream, sendResponse);
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "AI_STOP_GENERATION") {
+    if (activeAIStream) {
+      activeAIStream.cancel().catch(() => {});
+      activeAIStream = null;
+      sendResponse({ ok: true });
+    } else {
+      sendResponse({ ok: false });
+    }
+    return true;
+  }
+
+  if (msg.type === "AI_GET_SETTINGS") {
+    chrome.storage.sync.get([
+      "aiApiKey",
+      "aiModel",
+      "aiMaxTokens",
+      "aiTemperature",
+      "aiContextMode",
+    ]).then((settings) => {
+      sendResponse({
+        ok: true,
+        settings: {
+          hasApiKey: !!settings.aiApiKey,
+          model: settings.aiModel || "openai/gpt-4o",
+          maxTokens: settings.aiMaxTokens || 2048,
+          temperature: settings.aiTemperature ?? 0.3,
+          contextMode: settings.aiContextMode || "auto",
+        },
+      });
+    });
+    return true;
+  }
+
+  if (msg.type === "AI_SAVE_SETTINGS") {
+    chrome.storage.sync.set({
+      aiApiKey: msg.settings.apiKey,
+      aiModel: msg.settings.model,
+      aiMaxTokens: msg.settings.maxTokens,
+      aiTemperature: msg.settings.temperature,
+      aiContextMode: msg.settings.contextMode,
+    }).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  if (msg.type === "AI_GET_HISTORY") {
+    chrome.storage.local.get("aiConversationHistory").then(({ aiConversationHistory }) => {
+      sendResponse({ ok: true, history: aiConversationHistory || [] });
+    });
+    return true;
+  }
+
+  if (msg.type === "AI_CLEAR_HISTORY") {
+    chrome.storage.local.set({ aiConversationHistory: [] }).then(() => {
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
+  if (msg.type === "AI_TEST_KEY") {
+    (async () => {
+      try {
+        const aiApiKey = msg.apiKey || (await chrome.storage.sync.get("aiApiKey")).aiApiKey;
+        if (!aiApiKey) {
+          sendResponse({ ok: false, error: "No API key" });
+          return;
+        }
+        const resp = await fetch(OPENROUTER_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${aiApiKey}`,
+          },
+          body: JSON.stringify({
+            model: "openai/gpt-4o-mini",
+            messages: [{ role: "user", content: "Hi" }],
+            max_tokens: 5,
+          }),
+        });
+        if (resp.ok) {
+          sendResponse({ ok: true });
+        } else {
+          const err = await resp.json().catch(() => ({}));
+          sendResponse({ ok: false, error: err.error?.message || `HTTP ${resp.status}` });
+        }
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+
+  if (msg.type === "AI_GET_MODELS") {
+    (async () => {
+      try {
+        const aiApiKey = msg.apiKey || (await chrome.storage.sync.get("aiApiKey")).aiApiKey;
+        if (!aiApiKey) {
+          sendResponse({ ok: false, error: "No API key" });
+          return;
+        }
+        const resp = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${aiApiKey}` },
+        });
+        const data = await resp.json();
+        const models = data.data
+          ?.filter((m) => m.id)
+          .sort((a, b) => a.id.localeCompare(b.id))
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            contextLength: m.context_length,
+            pricing: m.pricing,
+          }));
+        sendResponse({ ok: true, models: models || [] });
+      } catch (err) {
+        sendResponse({ ok: false, error: err.message });
+      }
+    })();
+    return true;
+  }
+});

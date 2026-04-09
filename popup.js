@@ -386,5 +386,68 @@ function showConflictDialog(fileName) {
   });
 }
 
+// ─── AI Quick Actions ────────────────────────────────────────────────────────
+
+document.getElementById("ai-quick-generate")?.addEventListener("click", async () => {
+  const tab = await getActiveExcalidrawTab();
+  if (!tab) return;
+  const prompt = window.prompt("Describe the diagram you want to generate:");
+  if (!prompt) return;
+
+  const btn = document.getElementById("ai-quick-generate");
+  btn.textContent = "Generating...";
+  btn.disabled = true;
+
+  const sceneResult = await chrome.tabs.sendMessage(tab.id, { type: "GET_SCENE" });
+  const response = await chrome.runtime.sendMessage({
+    type: "AI_CHAT",
+    prompt,
+    canvasContext: sceneResult?.scene,
+    history: [],
+  });
+
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/></svg> Generate';
+  btn.disabled = false;
+
+  if (response?.ok) {
+    showToast("Diagram generated! Check the floating AI panel.", "success");
+  } else {
+    showToast(response?.error || "Generation failed", "error");
+  }
+});
+
+document.getElementById("ai-quick-analyze")?.addEventListener("click", async () => {
+  const tab = await getActiveExcalidrawTab();
+  if (!tab) return;
+
+  const btn = document.getElementById("ai-quick-analyze");
+  btn.textContent = "Analyzing...";
+  btn.disabled = true;
+
+  const sceneResult = await chrome.tabs.sendMessage(tab.id, { type: "GET_SCENE" });
+  if (!sceneResult?.scene) {
+    showToast("Canvas is empty", "error");
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Analyze';
+    btn.disabled = false;
+    return;
+  }
+
+  const response = await chrome.runtime.sendMessage({
+    type: "AI_CHAT",
+    prompt: "Analyze this diagram. Describe what it shows and suggest improvements.",
+    canvasContext: sceneResult.scene,
+    history: [],
+  });
+
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4f8ef7" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg> Analyze';
+  btn.disabled = false;
+
+  if (response?.ok) {
+    showToast("Analysis ready! Check the AI panel.", "success");
+  } else {
+    showToast(response?.error || "Analysis failed", "error");
+  }
+});
+
 // ─── Boot ────────────────────────────────────────────────────────────────────
 init();

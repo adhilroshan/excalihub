@@ -1113,6 +1113,93 @@
                 </div>
             </div>
 
+            <!-- AI Assistant Section -->
+            <div class="section-header" style="margin-top: 32px;">
+                <div class="section-title">AI Assistant</div>
+                <div class="section-description">
+                    Configure your AI provider for diagram generation, analysis, and chat
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="form-group">
+                    <label class="form-label" for="aiApiKey">OpenRouter API Key</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="password" id="aiApiKey" placeholder="sk-or-v1-..." style="flex: 1;" />
+                        <button class="btn-primary" id="btn-test-ai-key" style="padding: 8px 16px; white-space: nowrap; min-width: auto;">
+                            Test
+                        </button>
+                    </div>
+                    <div id="ai-key-status" class="form-hint" style="display: none;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Model</label>
+                    <div id="aiModelSelect" style="position: relative; width: 100%;">
+                        <div id="aiModelTrigger" style="
+                            width: 100%; padding: 8px 32px 8px 12px; background: #0d0f11;
+                            border: 1px solid #252b33; border-radius: 6px; color: #e8edf2;
+                            font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+                            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+                            box-sizing: border-box;
+                        ">Loading models...</div>
+                        <svg id="aiModelChevron" width="14" height="14" viewBox="0 0 14 14" fill="none" style="
+                            position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+                            pointer-events: none; color: #6b7685;
+                        "><path d="M3 5l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <div id="aiModelDropdown" style="
+                            display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+                            background: #161a1f; border: 1px solid #252b33; border-radius: 8px;
+                            box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 9999; max-height: 320px;
+                            overflow: hidden; display: none; flex-direction: column;
+                        ">
+                            <div style="padding: 8px; border-bottom: 1px solid #252b33;">
+                                <input type="text" id="aiModelSearch" placeholder="Search models..." style="
+                                    width: 100%; background: #0d0f11; border: 1px solid #252b33;
+                                    color: #e8edf2; border-radius: 6px; padding: 6px 10px; font-size: 12px;
+                                    outline: none; font-family: 'DM Sans', sans-serif; box-sizing: border-box;
+                                " />
+                            </div>
+                            <div id="aiModelList" style="overflow-y: auto; max-height: 260px; padding: 4px 0;"></div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="aiModel" value="" />
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                        <div class="form-hint" style="margin: 0;">Select which AI model to use via OpenRouter</div>
+                        <button id="btn-refresh-models" style="background: none; border: none; color: #4f8ef7; cursor: pointer; font-size: 11px; font-family: 'DM Sans', sans-serif; padding: 2px 6px;">Refresh</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Context Mode</label>
+                    <div style="display: flex; gap: 12px;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                            <input type="radio" name="aiContextMode" value="auto" checked /> Auto (always send canvas)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px;">
+                            <input type="radio" name="aiContextMode" value="manual" /> Manual (toggle per message)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="aiMaxTokens">Max Tokens: <span id="aiMaxTokensValue">2048</span></label>
+                    <input type="range" id="aiMaxTokens" min="500" max="4096" step="256" value="2048"
+                        style="width: 100%; accent-color: #4f8ef7;" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="aiTemperature">Temperature: <span id="aiTemperatureValue">0.3</span></label>
+                    <input type="range" id="aiTemperature" min="0" max="1" step="0.1" value="0.3"
+                        style="width: 100%; accent-color: #4f8ef7;" />
+                </div>
+
+                <div style="display: flex; justify-content: flex-end;">
+                    <button class="btn-primary" id="btn-save-ai-settings">Save AI Settings</button>
+                </div>
+                <div id="ai-save-status" class="status"></div>
+            </div>
+
             <!-- Footer -->
             <div class="footer">
                 <div class="footer-text">

@@ -47,6 +47,188 @@ function getExcalidrawScene() {
   }
 }
 
+// ─── AI Element Validator ─────────────────────────────────────────────────────
+
+function validateAndRepairElements(rawElements) {
+  if (!Array.isArray(rawElements)) return { error: "Invalid: not an array" };
+
+  const repaired = [];
+  const errors = [];
+
+  for (let i = 0; i < rawElements.length; i++) {
+    const el = rawElements[i];
+    if (!el || typeof el !== "object") {
+      errors.push(`Element ${i}: not an object`);
+      continue;
+    }
+
+    const validTypes = ["rectangle", "ellipse", "diamond", "text", "line", "arrow", "freedraw"];
+    if (!validTypes.includes(el.type)) {
+      errors.push(`Element ${i}: invalid type "${el.type}"`);
+      continue;
+    }
+
+    const repaired_el = {
+      id: el.id || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)),
+      type: el.type,
+      x: Number(el.x) || 0,
+      y: Number(el.y) || 0,
+      width: Math.max(Number(el.width) || 50, 1),
+      height: Math.max(Number(el.height) || 50, 1),
+      angle: Number(el.angle) || 0,
+      strokeColor: el.strokeColor || "#1e1e1e",
+      backgroundColor: el.backgroundColor || "transparent",
+      fillStyle: el.fillStyle || "hachure",
+      strokeWidth: Number(el.strokeWidth) || 2,
+      strokeStyle: el.strokeStyle || "solid",
+      roughness: el.roughness !== undefined ? Number(el.roughness) : 1,
+      opacity: Number(el.opacity) || 100,
+      groupIds: Array.isArray(el.groupIds) ? el.groupIds : [],
+      frameId: null,
+      index: el.index || `a${i}`,
+      roundness: el.roundness !== undefined ? el.roundness : null,
+      seed: el.seed || Math.floor(Math.random() * 2000000000),
+      version: el.version || 1,
+      versionNonce: el.versionNonce || Math.floor(Math.random() * 2000000000),
+      isDeleted: false,
+      boundElements: el.boundElements || null,
+      updated: Date.now(),
+      link: null,
+      locked: false,
+    };
+
+    if (el.type === "text") {
+      repaired_el.text = el.text || "Text";
+      repaired_el.fontSize = Number(el.fontSize) || 20;
+      repaired_el.fontFamily = Number(el.fontFamily) || 1;
+      repaired_el.textAlign = el.textAlign || "left";
+      repaired_el.verticalAlign = el.verticalAlign || "top";
+      repaired_el.containerId = null;
+      repaired_el.originalText = el.originalText || repaired_el.text;
+      repaired_el.autoResize = true;
+      repaired_el.lineHeight = 1.25;
+    }
+
+    if (el.type === "line" || el.type === "arrow") {
+      repaired_el.points = Array.isArray(el.points) && el.points.length > 0
+        ? el.points.map((p) => [Number(p[0]) || 0, Number(p[1]) || 0])
+        : [[0, 0], [100, 0]];
+      repaired_el.startBinding = el.startBinding || null;
+      repaired_el.endBinding = el.endBinding || null;
+      repaired_el.startArrowhead = el.startArrowhead || null;
+      repaired_el.endArrowhead = el.endArrowhead || (el.type === "arrow" ? "arrow" : null);
+      repaired_el.lastCommittedPoint = null;
+    }
+
+    if (el.type === "freedraw") {
+      repaired_el.points = Array.isArray(el.points) ? el.points : [[0, 0]];
+      repaired_el.pressures = [];
+      repaired_el.simulatePressure = true;
+    }
+
+    repaired.push(repaired_el);
+  }
+
+  if (repaired.length === 0) {
+    return { error: "No valid elements generated", errors };
+  }
+
+  return { elements: repaired, warnings: errors.length > 0 ? errors : undefined };
+}
+
+function centerElementsOnCanvas(elements) {
+  if (!elements || elements.length === 0) return elements;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const el of elements) {
+    minX = Math.min(minX, el.x);
+    minY = Math.min(minY, el.y);
+    maxX = Math.max(maxX, el.x + (el.width || 0));
+    maxY = Math.max(maxY, el.y + (el.height || 0));
+  }
+
+  const centerX = (window.innerWidth || 1200) / 2;
+  const centerY = (window.innerHeight || 800) / 2;
+  const diagramCenterX = (minX + maxX) / 2;
+  const diagramCenterY = (minY + maxY) / 2;
+  const offsetX = centerX - diagramCenterX;
+  const offsetY = centerY - diagramCenterY;
+
+  return elements.map((el) => ({
+    ...el,
+    x: Math.round(el.x + offsetX),
+    y: Math.round(el.y + offsetY),
+  }));
+}
+
+function applyElementsToCanvas(elements) {
+  try {
+    const existing = localStorage.getItem("excalidraw");
+    const existingElements = existing ? JSON.parse(existing) : [];
+
+    const allElements = [...existingElements, ...elements];
+    localStorage.setItem("excalidraw", JSON.stringify(allElements));
+
+    window.dispatchEvent(new StorageEvent("storage", { key: "excalidraw" }));
+
+    const canvas = document.querySelector("canvas");
+    if (canvas) {
+      canvas.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      canvas.dispatchEvent(new Event("pointerup", { bubbles: true }));
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+function parseAIResponse(content) {
+  try {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return { action: "chat", message: content };
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (parsed.action === "generate" && Array.isArray(parsed.elements)) {
+      const result = validateAndRepairElements(parsed.elements);
+      if (result.error) return { action: "error", message: result.error };
+      return {
+        action: "generate",
+        elements: centerElementsOnCanvas(result.elements),
+        warnings: result.warnings,
+      };
+    }
+    if (parsed.action === "analyze") {
+      return { action: "analyze", analysis: parsed.analysis };
+    }
+    if (parsed.action === "improve" && Array.isArray(parsed.elements)) {
+      const result = validateAndRepairElements(parsed.elements);
+      if (result.error) return { action: "error", message: result.error };
+      return {
+        action: "improve",
+        elements: centerElementsOnCanvas(result.elements),
+        summary: parsed.summary,
+        warnings: result.warnings,
+      };
+    }
+    if (parsed.action === "chat") {
+      return { action: "chat", message: parsed.message };
+    }
+    if (parsed.elements && Array.isArray(parsed.elements)) {
+      const result = validateAndRepairElements(parsed.elements);
+      if (result.error) return { action: "error", message: result.error };
+      return {
+        action: "generate",
+        elements: centerElementsOnCanvas(result.elements),
+        warnings: result.warnings,
+      };
+    }
+    return { action: "chat", message: content };
+  } catch {
+    return { action: "chat", message: content };
+  }
+}
+
 // ─── Sidebar Injection ───────────────────────────────────────────────────────
 
 function injectSidebar() {
@@ -70,6 +252,10 @@ function injectSidebar() {
         <span>ExcaliHub</span>
       </div>
       <div style="display: flex; gap: 6px; align-items: center;">
+        <div class="sidebar-tabs" style="display: flex; background: #0d0f11; border-radius: 6px; padding: 2px; border: 1px solid #252b33;">
+          <button class="sidebar-tab active" id="tab-files" style="padding: 3px 10px; border-radius: 4px; border: none; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; background: #4f8ef7; color: white;">Files</button>
+          <button class="sidebar-tab" id="tab-ai" style="padding: 3px 10px; border-radius: 4px; border: none; font-size: 11px; cursor: pointer; font-family: 'DM Sans', sans-serif; background: transparent; color: #6b7685;">AI</button>
+        </div>
         <button class="sidebar-theme-toggle" id="excalihub-theme-toggle" title="Toggle theme">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" class="theme-icon-light">
             <circle cx="7" cy="7" r="3" stroke="currentColor" stroke-width="1.3"/>
@@ -223,6 +409,29 @@ function injectSidebar() {
 
         <div class="file-list" id="excalihub-file-list">
           <div class="file-list-empty">Click refresh to load files</div>
+        </div>
+      </div>
+
+        <!-- AI Chat Panel (hidden by default) -->
+        <div id="excalihub-ai-sidebar-panel" style="display: none; flex-direction: column; height: calc(100vh - 120px);">
+          <div id="excalihub-ai-sidebar-messages" style="flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+            <div style="text-align: center; color: #6b7685; font-size: 12px; padding: 16px;">
+              Ask me to generate, analyze, or improve your diagrams.
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid #252b33;">
+            <textarea id="excalihub-ai-sidebar-input" placeholder="Ask AI..." rows="1" style="
+              flex: 1; background: #0d0f11; border: 1px solid #252b33; color: #e8edf2;
+              border-radius: 6px; padding: 7px 10px; font-size: 12px; outline: none;
+              resize: none; font-family: 'DM Sans', sans-serif; max-height: 80px;
+            "></textarea>
+            <button id="excalihub-ai-sidebar-send" style="
+              background: linear-gradient(135deg, #7c3aed, #4f8ef7); border: none;
+              border-radius: 6px; padding: 0 12px; cursor: pointer; display: flex; align-items: center;
+            ">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-6 12V8H2z" fill="white"/></svg>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1056,6 +1265,129 @@ function injectSidebar() {
       const newTheme = currentTheme === "dark" ? "light" : "dark";
       await chrome.storage.local.set({ theme: newTheme });
       applyTheme(newTheme);
+    });
+  }
+
+  // Tab switching
+  const tabFiles = document.getElementById("tab-files");
+  const tabAI = document.getElementById("tab-ai");
+  const filesSection = sidebarEl.querySelector(".sidebar-section");
+  const aiSidebarPanel = document.getElementById("excalihub-ai-sidebar-panel");
+
+  if (tabFiles && tabAI && filesSection && aiSidebarPanel) {
+    tabFiles.addEventListener("click", () => {
+      tabFiles.style.background = "#4f8ef7";
+      tabFiles.style.color = "white";
+      tabAI.style.background = "transparent";
+      tabAI.style.color = "#6b7685";
+      filesSection.style.display = "block";
+      aiSidebarPanel.style.display = "none";
+    });
+
+    tabAI.addEventListener("click", () => {
+      tabAI.style.background = "#4f8ef7";
+      tabAI.style.color = "white";
+      tabFiles.style.background = "transparent";
+      tabFiles.style.color = "#6b7685";
+      filesSection.style.display = "none";
+      aiSidebarPanel.style.display = "flex";
+    });
+  }
+
+  // Sidebar AI chat
+  const sidebarInput = document.getElementById("excalihub-ai-sidebar-input");
+  const sidebarSend = document.getElementById("excalihub-ai-sidebar-send");
+  const sidebarMessages = document.getElementById("excalihub-ai-sidebar-messages");
+
+  if (sidebarInput && sidebarSend) {
+    sidebarInput.addEventListener("input", () => {
+      sidebarInput.style.height = "auto";
+      sidebarInput.style.height = Math.min(sidebarInput.scrollHeight, 80) + "px";
+    });
+
+    sidebarInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sidebarSend.click();
+      }
+    });
+
+    sidebarSend.addEventListener("click", async () => {
+      const text = sidebarInput.value.trim();
+      if (!text || aiChatState.isStreaming) return;
+
+      sidebarInput.value = "";
+      sidebarInput.style.height = "auto";
+
+      const userDiv = document.createElement("div");
+      userDiv.style.cssText = "align-self: flex-end; max-width: 85%; background: #1e3a5f; color: #e8edf2; padding: 7px 10px; border-radius: 10px 10px 4px 10px; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;";
+      userDiv.textContent = text;
+      sidebarMessages.appendChild(userDiv);
+
+      const thinkingDiv = document.createElement("div");
+      thinkingDiv.style.cssText = "align-self: flex-start; max-width: 90%; background: #161a1f; color: #6b7685; padding: 7px 10px; border-radius: 10px 10px 10px 4px; font-size: 12px; border: 1px solid #252b33;";
+      thinkingDiv.textContent = "Thinking...";
+      sidebarMessages.appendChild(thinkingDiv);
+      sidebarMessages.scrollTop = sidebarMessages.scrollHeight;
+
+      const canvasContext = aiChatState.contextIncluded ? getExcalidrawScene().scene : null;
+
+      aiChatState.history.push({ role: "user", content: text, timestamp: Date.now() });
+      aiChatState.isStreaming = true;
+      sidebarSend.style.opacity = "0.5";
+
+      const response = await chrome.runtime.sendMessage({
+        type: "AI_CHAT",
+        prompt: text,
+        canvasContext,
+        history: aiChatState.history.filter((m) => m.role !== "system"),
+      });
+
+      aiChatState.isStreaming = false;
+      sidebarSend.style.opacity = "1";
+
+      const fullContent = response?.content || response?.error || "No response";
+      const parsed = response?.error ? null : parseAIResponse(fullContent);
+
+      thinkingDiv.remove();
+
+      if (response?.error) {
+        const errDiv = document.createElement("div");
+        errDiv.style.cssText = "align-self: flex-start; max-width: 90%; background: #1a1010; color: #f76f6f; padding: 7px 10px; border-radius: 10px 10px 10px 4px; font-size: 12px; border: 1px solid #5c1c1c;";
+        errDiv.textContent = response.error;
+        sidebarMessages.appendChild(errDiv);
+      } else if (parsed && (parsed.action === "generate" || parsed.action === "improve")) {
+        const card = document.createElement("div");
+        card.style.cssText = "align-self: flex-start; max-width: 95%; background: #161a1f; border: 1px solid #252b33; border-radius: 8px; overflow: hidden;";
+        card.innerHTML = '<div style="padding: 6px 10px; font-size: 10px; color: #6b7685; border-bottom: 1px solid #252b33;">' + (parsed.action === "generate" ? "Generated" : "Improved") + " — " + parsed.elements.length + " elements" + (parsed.summary ? "<br>" + parsed.summary : "") + '</div><div style="padding: 8px 10px;"><button class="sidebar-ai-apply" style="background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 11px; font-weight: 600; font-family: \'DM Sans\', sans-serif;">Apply to Canvas</button></div>';
+        card.querySelector(".sidebar-ai-apply").addEventListener("click", function () {
+          applyElementsToCanvas(parsed.elements);
+          this.textContent = "Applied!";
+          this.style.color = "#6b7685";
+          this.style.borderColor = "#252b33";
+          this.style.background = "#0d0f11";
+          this.disabled = true;
+        });
+        sidebarMessages.appendChild(card);
+      } else {
+        const aiDiv = document.createElement("div");
+        aiDiv.style.cssText = "align-self: flex-start; max-width: 90%; background: #161a1f; color: #e8edf2; padding: 7px 10px; border-radius: 10px 10px 10px 4px; font-size: 12px; line-height: 1.5; border: 1px solid #252b33; white-space: pre-wrap; word-break: break-word;";
+        aiDiv.textContent = parsed?.message || parsed?.analysis || fullContent;
+        sidebarMessages.appendChild(aiDiv);
+      }
+
+      aiChatState.history.push({
+        role: "assistant",
+        content: fullContent,
+        parsed,
+        timestamp: Date.now(),
+      });
+
+      chrome.storage.local.set({
+        aiConversationHistory: aiChatState.history.slice(-50),
+      }).catch(() => {});
+
+      sidebarMessages.scrollTop = sidebarMessages.scrollHeight;
     });
   }
 
@@ -1993,11 +2325,432 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 });
 
+// ─── AI Chat UI ──────────────────────────────────────────────────────────────
+
+let aiChatState = {
+  history: [],
+  isStreaming: false,
+  contextIncluded: true,
+};
+
+async function injectAIChat() {
+  if (document.getElementById("excalihub-ai-float")) return;
+
+  const settings = await chrome.runtime.sendMessage({ type: "AI_GET_SETTINGS" });
+  if (!settings?.ok || !settings.settings.hasApiKey) return;
+
+  const savedHistory = await chrome.runtime.sendMessage({ type: "AI_GET_HISTORY" });
+  if (savedHistory?.ok) aiChatState.history = savedHistory.history || [];
+
+  const aiFloat = document.createElement("div");
+  aiFloat.id = "excalihub-ai-float";
+  aiFloat.innerHTML = `
+    <div id="excalihub-ai-trigger" style="
+      position: fixed;
+      bottom: 24px;
+      right: 64px;
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #7c3aed, #4f8ef7);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(79, 142, 247, 0.3);
+      z-index: 999999;
+      transition: transform 0.2s, box-shadow 0.2s;
+    " title="ExcaliHub AI Chat">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+        <path d="M2 17l10 5 10-5"/>
+        <path d="M2 12l10 5 10-5"/>
+      </svg>
+    </div>
+
+    <div id="excalihub-ai-panel" style="
+      position: fixed;
+      bottom: 80px;
+      right: 64px;
+      width: 380px;
+      height: 500px;
+      background: #0d0f11;
+      border: 1px solid #252b33;
+      border-radius: 12px;
+      display: none;
+      flex-direction: column;
+      z-index: 1000000;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      overflow: hidden;
+      resize: both;
+      min-width: 300px;
+      min-height: 400px;
+    ">
+      <div id="excalihub-ai-header" style="
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        background: #161a1f;
+        border-bottom: 1px solid #252b33;
+        cursor: move;
+        user-select: none;
+      ">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+            <path d="M2 17l10 5 10-5"/>
+            <path d="M2 12l10 5 10-5"/>
+          </svg>
+          <span style="color: #e8edf2; font-size: 13px; font-weight: 600;">AI Assistant</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button id="excalihub-ai-context-toggle" title="Include canvas context" style="
+            background: #1a2a1a;
+            border: 1px solid #2d5a2d;
+            color: #4ade80;
+            border-radius: 4px;
+            padding: 3px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            font-family: 'DM Sans', sans-serif;
+          ">Context: ON</button>
+          <button id="excalihub-ai-clear" title="New conversation" style="
+            background: none; border: none; color: #6b7685; cursor: pointer; padding: 4px; display: flex; align-items: center;
+          ">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 4h10M5 4V2.5a1 1 0 011-1h2a1 1 0 011 1V4M11 4v7.5a1 1 0 01-1 1H4a1 1 0 01-1-1V4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button id="excalihub-ai-close" style="
+            background: none; border: none; color: #6b7685; cursor: pointer; padding: 4px; display: flex; align-items: center;
+          ">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="excalihub-ai-messages" style="
+        flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+      ">
+        <div style="text-align: center; color: #6b7685; font-size: 12px; padding: 20px;">
+          Ask me to generate a diagram, analyze your drawing, or suggest improvements.
+        </div>
+      </div>
+
+      <div id="excalihub-ai-input-area" style="
+        display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid #252b33; background: #161a1f;
+      ">
+        <textarea id="excalihub-ai-input" placeholder="Describe a diagram or ask a question..." rows="1" style="
+          flex: 1; background: #0d0f11; border: 1px solid #252b33; color: #e8edf2; border-radius: 8px;
+          padding: 8px 12px; font-size: 13px; outline: none; resize: none; font-family: 'DM Sans', sans-serif;
+          max-height: 100px; line-height: 1.4;
+        "></textarea>
+        <button id="excalihub-ai-send" style="
+          background: linear-gradient(135deg, #7c3aed, #4f8ef7); border: none; border-radius: 8px;
+          padding: 0 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+          transition: opacity 0.15s;
+        " title="Send">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8l12-6-6 12V8H2z" fill="white"/></svg>
+        </button>
+        <button id="excalihub-ai-stop" style="
+          background: #5c1c1c; border: 1px solid #f76f6f; border-radius: 8px; padding: 0 14px;
+          cursor: pointer; display: none; align-items: center; justify-content: center;
+          color: #f76f6f; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;
+        " title="Stop">Stop</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(aiFloat);
+
+  const trigger = document.getElementById("excalihub-ai-trigger");
+  const panel = document.getElementById("excalihub-ai-panel");
+  const closeBtn = document.getElementById("excalihub-ai-close");
+  const sendBtn = document.getElementById("excalihub-ai-send");
+  const stopBtn = document.getElementById("excalihub-ai-stop");
+  const input = document.getElementById("excalihub-ai-input");
+  const messagesEl = document.getElementById("excalihub-ai-messages");
+  const clearBtn = document.getElementById("excalihub-ai-clear");
+  const contextToggle = document.getElementById("excalihub-ai-context-toggle");
+  const header = document.getElementById("excalihub-ai-header");
+
+  trigger.addEventListener("mouseenter", () => {
+    trigger.style.transform = "scale(1.1)";
+    trigger.style.boxShadow = "0 6px 24px rgba(79, 142, 247, 0.4)";
+  });
+  trigger.addEventListener("mouseleave", () => {
+    trigger.style.transform = "scale(1)";
+    trigger.style.boxShadow = "0 4px 16px rgba(79, 142, 247, 0.3)";
+  });
+
+  trigger.addEventListener("click", () => {
+    panel.style.display = "flex";
+    trigger.style.display = "none";
+    input.focus();
+    renderHistory();
+  });
+
+  closeBtn.addEventListener("click", () => {
+    panel.style.display = "none";
+    trigger.style.display = "flex";
+  });
+
+  let isDragging = false, dragOffX = 0, dragOffY = 0;
+  header.addEventListener("mousedown", (e) => {
+    if (e.target.tagName === "BUTTON" || e.target.closest("button")) return;
+    isDragging = true;
+    dragOffX = e.clientX - panel.getBoundingClientRect().left;
+    dragOffY = e.clientY - panel.getBoundingClientRect().top;
+    panel.style.transition = "none";
+  });
+  document.addEventListener("mousemove", (e) => {
+    if (!isDragging) return;
+    panel.style.left = `${e.clientX - dragOffX}px`;
+    panel.style.top = `${e.clientY - dragOffY}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+  });
+  document.addEventListener("mouseup", () => {
+    isDragging = false;
+    panel.style.transition = "";
+  });
+
+  contextToggle.addEventListener("click", () => {
+    aiChatState.contextIncluded = !aiChatState.contextIncluded;
+    contextToggle.textContent = aiChatState.contextIncluded ? "Context: ON" : "Context: OFF";
+    contextToggle.style.background = aiChatState.contextIncluded ? "#1a2a1a" : "#0d0f11";
+    contextToggle.style.borderColor = aiChatState.contextIncluded ? "#2d5a2d" : "#252b33";
+    contextToggle.style.color = aiChatState.contextIncluded ? "#4ade80" : "#6b7685";
+  });
+
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 100) + "px";
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendBtn.click();
+    }
+  });
+
+  clearBtn.addEventListener("click", async () => {
+    aiChatState.history = [];
+    await chrome.runtime.sendMessage({ type: "AI_CLEAR_HISTORY" });
+    messagesEl.innerHTML = `<div style="text-align: center; color: #6b7685; font-size: 12px; padding: 20px;">Conversation cleared. Ask me anything!</div>`;
+  });
+
+  function renderHistory() {
+    if (aiChatState.history.length === 0) return;
+    messagesEl.innerHTML = "";
+    for (const msg of aiChatState.history) {
+      if (msg.role === "user") {
+        appendUserMessage(msg.content);
+      } else {
+        appendAIMessage(msg.content, msg.parsed);
+      }
+    }
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendUserMessage(text) {
+    const div = document.createElement("div");
+    div.style.cssText = "align-self: flex-end; max-width: 80%; background: #1e3a5f; color: #e8edf2; padding: 8px 12px; border-radius: 12px 12px 4px 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;";
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendAIMessage(text, parsed) {
+    const wrapper = document.createElement("div");
+    wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
+
+    if (parsed && (parsed.action === "generate" || parsed.action === "improve")) {
+      const card = document.createElement("div");
+      card.style.cssText = "background: #161a1f; border: 1px solid #252b33; border-radius: 10px; overflow: hidden;";
+
+      const label = document.createElement("div");
+      label.style.cssText = "padding: 8px 12px; font-size: 11px; color: #6b7685; border-bottom: 1px solid #252b33;";
+      label.textContent = parsed.action === "generate" ? "Generated diagram" : "Improved diagram";
+      if (parsed.summary) label.textContent += " — " + parsed.summary;
+      card.appendChild(label);
+
+      const actions = document.createElement("div");
+      actions.style.cssText = "padding: 10px 12px; display: flex; gap: 8px;";
+
+      const applyBtn = document.createElement("button");
+      applyBtn.style.cssText = "flex: 1; background: #1a2a1a; border: 1px solid #2d5a2d; color: #4ade80; border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 12px; font-weight: 600; font-family: 'DM Sans', sans-serif;";
+      applyBtn.textContent = "Apply to Canvas";
+      applyBtn.addEventListener("click", () => {
+        const result = applyElementsToCanvas(parsed.elements);
+        if (result.ok) {
+          applyBtn.textContent = "Applied!";
+          applyBtn.style.color = "#6b7685";
+          applyBtn.style.borderColor = "#252b33";
+          applyBtn.style.background = "#0d0f11";
+          applyBtn.disabled = true;
+        }
+      });
+      actions.appendChild(applyBtn);
+
+      const countLabel = document.createElement("span");
+      countLabel.style.cssText = "display: flex; align-items: center; font-size: 11px; color: #6b7685;";
+      countLabel.textContent = parsed.elements.length + " elements";
+      actions.appendChild(countLabel);
+
+      card.appendChild(actions);
+      wrapper.appendChild(card);
+    } else {
+      const bubble = document.createElement("div");
+      bubble.style.cssText = "background: #161a1f; color: #e8edf2; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid #252b33; white-space: pre-wrap; word-break: break-word;";
+      bubble.textContent = text;
+      wrapper.appendChild(bubble);
+    }
+
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendStreamingMessage() {
+    const wrapper = document.createElement("div");
+    wrapper.id = "excalihub-ai-streaming";
+    wrapper.style.cssText = "align-self: flex-start; max-width: 90%;";
+
+    const bubble = document.createElement("div");
+    bubble.style.cssText = "background: #161a1f; color: #e8edf2; padding: 8px 12px; border-radius: 12px 12px 12px 4px; font-size: 13px; line-height: 1.5; border: 1px solid #252b33; white-space: pre-wrap; word-break: break-word;";
+    bubble.id = "excalihub-ai-stream-bubble";
+    bubble.innerHTML = '<span style="color: #6b7685;">Thinking...</span>';
+
+    wrapper.appendChild(bubble);
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  sendBtn.addEventListener("click", async () => {
+    const text = input.value.trim();
+    if (!text || aiChatState.isStreaming) return;
+
+    input.value = "";
+    input.style.height = "auto";
+
+    aiChatState.isStreaming = true;
+    sendBtn.style.display = "none";
+    stopBtn.style.display = "flex";
+
+    appendUserMessage(text);
+    appendStreamingMessage();
+
+    const canvasContext = aiChatState.contextIncluded ? getExcalidrawScene().scene : null;
+
+    aiChatState.history.push({ role: "user", content: text, timestamp: Date.now() });
+
+    const response = await chrome.runtime.sendMessage({
+      type: "AI_CHAT",
+      prompt: text,
+      canvasContext,
+      history: aiChatState.history.filter((m) => m.role !== "system"),
+    });
+
+    aiChatState.isStreaming = false;
+    sendBtn.style.display = "flex";
+    stopBtn.style.display = "none";
+
+    if (response?.error) {
+      const streamEl = document.getElementById("excalihub-ai-streaming");
+      if (streamEl) {
+        const bubble = streamEl.querySelector("div");
+        bubble.textContent = "Error: " + response.error;
+        bubble.style.color = "#f76f6f";
+        bubble.style.borderColor = "#5c1c1c";
+        streamEl.id = "";
+      }
+      return;
+    }
+
+    const streamBubble = document.getElementById("excalihub-ai-stream-bubble");
+    const fullContent = response?.content || "";
+
+    const parsed = parseAIResponse(fullContent);
+    const displayText = parsed.action === "chat" || parsed.action === "analyze"
+      ? (parsed.message || parsed.analysis || fullContent)
+      : parsed.summary || fullContent;
+
+    if (streamBubble) streamBubble.textContent = displayText;
+    const streamEl = document.getElementById("excalihub-ai-streaming");
+    if (streamEl) streamEl.id = "";
+
+    aiChatState.history.push({
+      role: "assistant",
+      content: fullContent,
+      parsed,
+      timestamp: Date.now(),
+    });
+
+    if (parsed.action === "generate" || parsed.action === "improve") {
+      const lastMsg = messagesEl.lastElementChild;
+      if (lastMsg) lastMsg.remove();
+      appendAIMessage(displayText, parsed);
+    }
+
+    chrome.storage.local.set({
+      aiConversationHistory: aiChatState.history.slice(-50),
+    }).catch(() => {});
+
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+
+  stopBtn.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "AI_STOP_GENERATION" });
+    aiChatState.isStreaming = false;
+    sendBtn.style.display = "flex";
+    stopBtn.style.display = "none";
+  });
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === "AI_STREAM_CHUNK") {
+      const bubble = document.getElementById("excalihub-ai-stream-bubble");
+      if (bubble) {
+        bubble.textContent = msg.fullContent;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+    }
+    if (msg.type === "AI_STREAM_ERROR") {
+      const bubble = document.getElementById("excalihub-ai-stream-bubble");
+      if (bubble) {
+        bubble.textContent = "Error: " + msg.error;
+        bubble.style.color = "#f76f6f";
+      }
+      aiChatState.isStreaming = false;
+      sendBtn.style.display = "flex";
+      stopBtn.style.display = "none";
+    }
+  });
+
+  const aiSettings = await chrome.runtime.sendMessage({ type: "AI_GET_SETTINGS" });
+  if (aiSettings?.ok) {
+    aiChatState.contextIncluded = aiSettings.settings.contextMode === "auto";
+    if (contextToggle) {
+      contextToggle.textContent = aiChatState.contextIncluded ? "Context: ON" : "Context: OFF";
+      contextToggle.style.background = aiChatState.contextIncluded ? "#1a2a1a" : "#0d0f11";
+      contextToggle.style.borderColor = aiChatState.contextIncluded ? "#2d5a2d" : "#252b33";
+      contextToggle.style.color = aiChatState.contextIncluded ? "#4ade80" : "#6b7685";
+    }
+  }
+}
+
 // ─── Initialize ──────────────────────────────────────────────────────────────
 
-// Wait for the page to be fully loaded
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", injectSidebar);
+  document.addEventListener("DOMContentLoaded", () => {
+    injectSidebar();
+    injectAIChat();
+  });
 } else {
   injectSidebar();
+  injectAIChat();
 }
