@@ -1383,7 +1383,7 @@ IMPORTANT RULES:
 5. MINIMIZE verbosity — omit optional fields that equal their defaults:
    - Skip "angle":0, "locked":false, "groupIds":[], "boundElements":null, "link":null, "frameId":null unless needed.
    - Skip "fillStyle","strokeStyle","roughness","opacity" when using defaults (hachure, solid, 1, 100).
-6. For org charts / hierarchies, use rectangles for nodes with floating text labels — keep it simple.
+6. For org charts / hierarchies, use rectangles for nodes with SEPARATE floating text labels — NEVER put "text" inside a rectangle/ellipse/diamond element. Shapes and text are ALWAYS separate element types. Keep it simple.
 7. CRITICAL: Complete the ENTIRE JSON before stopping. If a diagram is complex, use fewer elements. A role hierarchy needs 10-15 elements max.
 8. When using canvas_modify, try to change only the properties the user asked about — don't replace the entire element.
 9. When using canvas_delete, ALWAYS call canvas_read() first to find the correct element IDs unless the user explicitly provides them.`;
@@ -1395,7 +1395,7 @@ function compressCanvasContext(scene) {
     .slice(0, 200)
     .map((el) => {
       const compressed = {
-        id: el.id,          // Always include — needed for canvas_delete/canvas_modify
+        id: el.id, // Always include — needed for canvas_delete/canvas_modify
         type: el.type,
         x: Math.round(el.x),
         y: Math.round(el.y),
@@ -1423,7 +1423,8 @@ const CANVAS_TOOLS = [
     type: "function",
     function: {
       name: "canvas_read",
-      description: "Read all current elements on the Excalidraw canvas. Use this before modifying or deleting anything so you know the element IDs and positions.",
+      description:
+        "Read all current elements on the Excalidraw canvas. Use this before modifying or deleting anything so you know the element IDs and positions.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -1467,12 +1468,16 @@ const CANVAS_TOOLS = [
     type: "function",
     function: {
       name: "canvas_modify",
-      description: "Modify a single existing element's properties (position, color, text, etc.).",
+      description:
+        "Modify a single existing element's properties (position, color, text, etc.).",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "The element ID to modify" },
-          changes: { type: "object", description: "Properties to update on the element" },
+          changes: {
+            type: "object",
+            description: "Properties to update on the element",
+          },
         },
         required: ["id", "changes"],
       },
@@ -1737,9 +1742,15 @@ async function handleAIToolLoop(messages, settings, tabId, port, sendResponse) {
   let portAlive = true;
   const postToPort = (msg) => {
     if (!portAlive) return;
-    try { port.postMessage(msg); } catch (_) { portAlive = false; }
+    try {
+      port.postMessage(msg);
+    } catch (_) {
+      portAlive = false;
+    }
   };
-  port.onDisconnect.addListener(() => { portAlive = false; });
+  port.onDisconnect.addListener(() => {
+    portAlive = false;
+  });
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     let result;

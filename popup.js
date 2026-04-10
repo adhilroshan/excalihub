@@ -740,14 +740,7 @@ async function handlePopupSend(text) {
     });
   });
 
-  chrome.runtime.sendMessage({
-    type: "AI_CHAT",
-    prompt: text,
-    canvasContext,
-    history: popupChatState.history.filter((m) => m.role !== "system"),
-    _portName: PORT_NAME,
-  });
-
+  // Send the request through the port (race-condition-free path)
   try {
     streamPort.postMessage({
       type: "ai_chat_request",

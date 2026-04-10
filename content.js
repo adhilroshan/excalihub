@@ -144,6 +144,60 @@ function validateAndRepairElements(rawElements) {
     }
 
     repaired.push(repaired_el);
+
+    // If a shape element has a "text" field, split it into shape + text label
+    if (
+      (el.type === "rectangle" ||
+        el.type === "ellipse" ||
+        el.type === "diamond") &&
+      el.text &&
+      typeof el.text === "string" &&
+      el.text.trim()
+    ) {
+      const textEl = {
+        id: crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2),
+        type: "text",
+        x: repaired_el.x,
+        y: repaired_el.y,
+        width: repaired_el.width,
+        height: repaired_el.height,
+        angle: 0,
+        strokeColor: el.strokeColor || "#1e1e1e",
+        backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roughness: repaired_el.roughness,
+        opacity: repaired_el.opacity,
+        groupIds: [],
+        frameId: null,
+        index: `${repaired_el.index}-t`,
+        roundness: null,
+        seed: Math.floor(Math.random() * 2000000000),
+        version: 1,
+        versionNonce: Math.floor(Math.random() * 2000000000),
+        isDeleted: false,
+        boundElements: null,
+        updated: Date.now(),
+        link: null,
+        locked: false,
+        text: el.text.trim(),
+        fontSize: Number(el.fontSize) || 16,
+        fontFamily: Number(el.fontFamily) || 1,
+        textAlign: el.textAlign || "center",
+        verticalAlign: el.verticalAlign || "middle",
+        containerId: repaired_el.id,
+        originalText: el.text.trim(),
+        autoResize: false,
+        lineHeight: 1.25,
+      };
+      repaired.push(textEl);
+
+      // Link shape to text via boundElements
+      repaired_el.boundElements = [{ id: textEl.id, type: "text" }];
+    }
   }
 
   if (repaired.length === 0) {
@@ -1827,15 +1881,7 @@ function injectSidebar() {
           });
         });
 
-        chrome.runtime.sendMessage({
-          type: "AI_CHAT",
-          prompt: text,
-          canvasContext,
-          history: aiChatState.history.filter((m) => m.role !== "system"),
-          _portName: PORT_NAME,
-        });
-
-        // Also send the request through the port itself (race-condition-free)
+        // Send the request through the port (race-condition-free path)
         try {
           streamPort.postMessage({
             type: "ai_chat_request",
@@ -2372,14 +2418,6 @@ function injectSidebar() {
         streamPort.onDisconnect.addListener(() => {
           resolve({ error: "Stream disconnected" });
         });
-      });
-
-      chrome.runtime.sendMessage({
-        type: "AI_CHAT",
-        prompt: text,
-        canvasContext,
-        history: aiChatState.history.filter((m) => m.role !== "system"),
-        _portName: "ai-stream-sidebar-resend",
       });
 
       try {
@@ -3767,14 +3805,6 @@ async function injectAIChat() {
       streamPort.onDisconnect.addListener(() => {
         resolve({ error: "Stream disconnected" });
       });
-    });
-
-    chrome.runtime.sendMessage({
-      type: "AI_CHAT",
-      prompt: text,
-      canvasContext,
-      history: aiChatState.history.filter((m) => m.role !== "system"),
-      _portName: PORT_NAME,
     });
 
     try {
