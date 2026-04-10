@@ -748,6 +748,15 @@ async function handlePopupSend(text) {
     _portName: PORT_NAME,
   });
 
+  try {
+    streamPort.postMessage({
+      type: "ai_chat_request",
+      prompt: text,
+      canvasContext,
+      history: popupChatState.history.filter((m) => m.role !== "system"),
+    });
+  } catch (_) {}
+
   const response = await streamPromise;
   try {
     streamPort.disconnect();

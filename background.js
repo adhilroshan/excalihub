@@ -304,7 +304,64 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => {
     activePorts.delete(key);
   });
+
+  // Listen for AI chat requests sent through the port (race-condition-free path)
+  port.onMessage.addListener((msg) => {
+    if (msg.type === "ai_chat_request") {
+      handleAIChatFromPort(msg, sender, port);
+    }
+  });
 });
+
+// Handles an AI chat request received via a port message.
+// Uses the port directly — no lookup, no race condition.
+async function handleAIChatFromPort(msg, sender, port) {
+  try {
+    const settings = await chrome.storage.local.get([
+      "aiApiKey",
+      "aiModel",
+      "aiMaxTokens",
+      "aiTemperature",
+      "aiContextMode",
+    ]);
+
+    if (!settings.aiApiKey) {
+      port.postMessage({ type: "error", error: "No API key configured." });
+      return;
+    }
+
+    const messages = [{ role: "system", content: EXCALIDRAW_SYSTEM_PROMPT }];
+
+    if (msg.history && msg.history.length > 0) {
+      for (const h of msg.history.slice(-20)) {
+        messages.push({ role: h.role, content: h.content });
+      }
+    }
+
+    let userContent = msg.prompt;
+    if (msg.canvasContext) {
+      const contextStr = compressCanvasContext(msg.canvasContext);
+      if (contextStr) {
+        userContent += `\n\nCurrent canvas state:\n${contextStr}`;
+      }
+    }
+    messages.push({ role: "user", content: userContent });
+
+    if (sender.tab) {
+      handleAIToolLoop(messages, settings, sender.tab.id, port, (resp) => {
+        // Tool loop handles its own port posting; sendResponse is for the original message
+      });
+    } else {
+      // Popup — no tab, stream without tools
+      const stream = await callOpenRouter(messages, settings);
+      handleAIStreamWithPort(stream, port, (resp) => {});
+    }
+  } catch (err) {
+    try {
+      port.postMessage({ type: "error", error: err.message });
+    } catch (_) {}
+  }
+}
 
 // ─── Message Handler ─────────────────────────────────────────────────────────
 // IMPORTANT: The listener must NOT be async. Return true synchronously to keep
@@ -1593,83 +1650,183 @@ function handleAIStream(stream, sendResponse) {
 // ─── Tool Execution Loop ──────────────────────────────────────────────────────
 
 // Main loop: calls AI, detects tool_use, executes tool, re-calls AI. Max rounds.
-// Only the FINAL (non-tool) response is streamed to the user.
-// Intermediate tool calls are emitted on the port as { type: "tool_call" }.
+// Tool calls are emitted on the port as { type: "tool_call" }.
+// The FINAL (non-tool) response is streamed to the port as chunks, then sendResponse.
 async function handleAIToolLoop(messages, settings, tabId, port, sendResponse) {
   const MAX_TOOL_ROUNDS = 3;
+  let portAlive = true;
+  const postToPort = (msg) => {
+    if (!portAlive) return;
+    try {
+      port.postMessage(msg);
+    } catch (_) {
+      portAlive = false;
+    }
+  };
 
-  let lastContent = "";
+  port.onDisconnect.addListener(() => {
+    portAlive = false;
+  });
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     let fullContent = "";
+    let isFinalResponse = false;
 
     try {
       const stream = await callOpenRouter(messages, settings);
-      fullContent = await consumeStream(stream, port);
-      lastContent = fullContent;
+      // Stream the response — collect full content and detect if it's a tool_use or final
+      const result = await consumeStreamForToolLoop(stream, postToPort);
+      fullContent = result.content;
+      isFinalResponse = !result.isToolUse;
     } catch (err) {
-      sendResponse({ error: err.message });
+      if (portAlive) {
+        postToPort({ type: "error", error: err.message });
+        sendResponse({ error: err.message });
+      }
       return;
     }
 
     if (!fullContent.trim()) {
-      sendResponse({ error: "The AI returned no content." });
+      if (portAlive) {
+        postToPort({ type: "error", error: "The AI returned no content." });
+        sendResponse({ error: "The AI returned no content." });
+      }
       return;
     }
 
-    // Try to parse the final response
-    let parsed;
-    try {
-      const jsonMatch = fullContent.match(
-        /\{[\s\S]*"action"\s*:\s*"(generate|improve|analyze|chat|tool_use)"[\s\S]*\}/,
-      );
-      if (!jsonMatch) break; // Not JSON — treat as final response
-      parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      break; // Not valid JSON — treat as final response
-    }
-
-    if (parsed.action !== "tool_use") {
-      // Final response — already streamed, just confirm
+    if (isFinalResponse) {
+      // Final response — stream it to the port as a single chunk, then done
+      postToPort({ type: "chunk", delta: fullContent, fullContent });
+      postToPort({ type: "done", fullContent });
       sendResponse({ ok: true, content: fullContent });
       return;
     }
 
-    // Execute the tool
-    const { tool, params } = parsed;
-    let toolResult;
+    // It's a tool_use — parse and execute.
+    // Support two formats:
+    //   1. { "action": "tool_use", "tool": "canvas_read", "params": {} }  (spec format)
+    //   2. { "action": "canvas_read", "params": {} }  (shorthand some models emit)
+    let parsed;
     try {
-      toolResult = await executeTool(tool, params, tabId, port);
-    } catch (err) {
-      toolResult = { success: false, error: err.message };
-      port.postMessage({ type: "tool_call", tool, result: toolResult });
+      const TOOL_USE_REGEX =
+        /\{[\s\S]*"action"\s*:\s*"(tool_use|canvas_read|canvas_apply|canvas_delete|canvas_modify)"[\s\S]*\}/;
+      const jsonMatch = fullContent.match(TOOL_USE_REGEX);
+      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+    } catch {
+      // Couldn't parse — treat as final
+      postToPort({ type: "chunk", delta: fullContent, fullContent });
+      postToPort({ type: "done", fullContent });
+      sendResponse({ ok: true, content: fullContent });
+      return;
     }
 
-    // Append tool result to messages and continue the loop
-    messages.push({
-      role: "tool",
-      content: JSON.stringify(toolResult),
-      name: tool,
-    });
+    if (!parsed) {
+      postToPort({ type: "chunk", delta: fullContent, fullContent });
+      postToPort({ type: "done", fullContent });
+      sendResponse({ ok: true, content: fullContent });
+      return;
+    }
 
-    // Also add a hidden assistant message for context (tool call itself)
+    // Normalise: handle both { action:"tool_use", tool:"canvas_read" }
+    // and shorthand { action:"canvas_read" }
+    const CANVAS_TOOLS = ["canvas_read", "canvas_apply", "canvas_delete", "canvas_modify"];
+    let toolName, toolParams;
+    if (parsed.action === "tool_use" && parsed.tool) {
+      toolName = parsed.tool;
+      toolParams = parsed.params || {};
+    } else if (CANVAS_TOOLS.includes(parsed.action)) {
+      toolName = parsed.action;
+      toolParams = parsed.params || {};
+    } else {
+      // Not a real tool call — treat as final response
+      postToPort({ type: "chunk", delta: fullContent, fullContent });
+      postToPort({ type: "done", fullContent });
+      sendResponse({ ok: true, content: fullContent });
+      return;
+    }
+    // Execute the tool using the normalised toolName/toolParams
+    let toolResult;
+    try {
+      toolResult = await executeTool(toolName, toolParams, tabId, postToPort);
+    } catch (err) {
+      toolResult = { success: false, error: err.message };
+      postToPort({ type: "tool_call", tool: toolName, result: toolResult });
+    }
+
+    // Append assistant call FIRST, then the result as a user message.
+    // Using role:"user" for the tool result because many OpenRouter models
+    // don't support role:"tool", causing them to ignore or error on the message.
     messages.push({
       role: "assistant",
-      content: JSON.stringify({ action: "tool_use", tool, params }),
+      content: JSON.stringify({ action: "tool_use", tool: toolName, params: toolParams }),
+    });
+    messages.push({
+      role: "user",
+      content: `Tool result for ${toolName}:\n${JSON.stringify(toolResult, null, 2)}`,
     });
   }
 
-  // If we exhausted tool rounds without a final response, return whatever we got
+  // Exhausted rounds
   sendResponse({
     ok: true,
-    content:
-      lastContent ||
-      "Tool execution completed, but the AI did not produce a final response.",
+    content: "The AI reached the maximum number of tool rounds.",
   });
 }
 
+// Consumes an SSE stream, collects full content, and detects if the response
+// is a tool_use (so the caller knows whether to execute a tool or show the response).
+async function consumeStreamForToolLoop(stream, postToPort) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = "";
+  let buffer = "";
+  let isToolUse = false;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") break;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) continue;
+          const delta = parsed.choices?.[0]?.delta;
+          if (delta?.content) {
+            fullContent += delta.content;
+            // Early detection of tool_use (also match direct canvas_* action names)
+            if (!isToolUse && fullContent.length > 10) {
+              const TOOL_PATTERN =
+                /"action"\s*:\s*"(tool_use|canvas_read|canvas_apply|canvas_delete|canvas_modify)"/;
+              if (TOOL_PATTERN.test(fullContent)) isToolUse = true;
+            }
+          }
+          if (delta?.reasoning) fullContent += delta.reasoning;
+        } catch {}
+      }
+    }
+  } catch {}
+
+  // If we didn't detect tool_use early, do a final check.
+  // Match either the explicit "tool_use" sentinel OR any direct canvas_* action name
+  // (some models skip the wrapper and emit the tool name directly as the action).
+  if (!isToolUse) {
+    const TOOL_USE_PATTERN =
+      /"action"\s*:\s*"(tool_use|canvas_read|canvas_apply|canvas_delete|canvas_modify)"/;
+    if (TOOL_USE_PATTERN.test(fullContent)) isToolUse = true;
+  }
+
+  return { content: fullContent, isToolUse };
+}
+
 // Consumes an SSE stream, returns the full content string.
-// Also streams chunks to the port if it's a chat/analyze response (not tool_use JSON).
 async function consumeStream(stream, port) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -1705,11 +1862,9 @@ async function consumeStream(stream, port) {
 
 // Executes a single tool call and returns the result.
 // Also emits a tool_call event on the port for UI rendering.
-async function executeTool(tool, params, tabId, port) {
+async function executeTool(tool, params, tabId, postMessage) {
   const postResult = (result) => {
-    try {
-      port.postMessage({ type: "tool_call", tool, result });
-    } catch (_) {}
+    postMessage({ type: "tool_call", tool, result });
     return result;
   };
 

@@ -1835,6 +1835,16 @@ function injectSidebar() {
           _portName: PORT_NAME,
         });
 
+        // Also send the request through the port itself (race-condition-free)
+        try {
+          streamPort.postMessage({
+            type: "ai_chat_request",
+            prompt: text,
+            canvasContext,
+            history: aiChatState.history.filter((m) => m.role !== "system"),
+          });
+        } catch (_) {}
+
         const response = await streamPromise;
         try {
           streamPort.disconnect();
@@ -2371,6 +2381,15 @@ function injectSidebar() {
         history: aiChatState.history.filter((m) => m.role !== "system"),
         _portName: "ai-stream-sidebar-resend",
       });
+
+      try {
+        streamPort.postMessage({
+          type: "ai_chat_request",
+          prompt: text,
+          canvasContext,
+          history: aiChatState.history.filter((m) => m.role !== "system"),
+        });
+      } catch (_) {}
 
       const response = await streamPromise;
       try {
@@ -3757,6 +3776,15 @@ async function injectAIChat() {
       history: aiChatState.history.filter((m) => m.role !== "system"),
       _portName: PORT_NAME,
     });
+
+    try {
+      streamPort.postMessage({
+        type: "ai_chat_request",
+        prompt: text,
+        canvasContext,
+        history: aiChatState.history.filter((m) => m.role !== "system"),
+      });
+    } catch (_) {}
 
     const response = await streamPromise;
     try {
