@@ -1292,16 +1292,28 @@ Returns: { "success": true, "element": { updated element object } }
 
 ## How to Use Tools
 
-When you need to use a tool, respond with JSON:
+When you need to use a tool, your ENTIRE response must be ONLY this JSON and nothing else:
 {
   "action": "tool_use",
-  "tool": "canvas_read|canvas_apply|canvas_delete|canvas_modify",
-  "params": { ...tool-specific params... }
+  "tool": "canvas_read",
+  "params": {}
 }
 
-The tool result will be returned and you can continue the conversation. Use multiple tools in sequence if needed — e.g. canvas_read() first to find element IDs, then canvas_delete() or canvas_modify().
+Replace "canvas_read" with the tool name and fill in "params" as needed.
 
-IMPORTANT: Only use tools when they're relevant. For general questions or generating new diagrams from scratch, use the normal action types below.
+After you emit a tool_use response, the system will execute the tool and send back the result as:
+  Tool result for <toolName>:
+  { ...result object... }
+
+You then continue and produce your final response (generate/analyze/improve/chat).
+
+CRITICAL TOOL RULES:
+- When the user references EXISTING canvas elements (e.g. "delete X", "move Y", "fix the diagram"), you MUST call canvas_read FIRST to get current element IDs. Never guess IDs.
+- Use canvas_apply only with valid Excalidraw element objects (same format as "generate").
+- Use canvas_delete with an array of real IDs from a prior canvas_read result.
+- Use canvas_modify with a real ID and only the changed properties.
+- ONLY emit a tool_use response when a tool is truly needed. For fresh diagram generation, skip tools and use "generate" directly.
+- After receiving a tool result, produce a final response — do NOT emit another tool_use unless strictly necessary.
 
 ---
 
@@ -1383,6 +1395,7 @@ function compressCanvasContext(scene) {
     .slice(0, 200)
     .map((el) => {
       const compressed = {
+        id: el.id,          // Always include — needed for canvas_delete/canvas_modify
         type: el.type,
         x: Math.round(el.x),
         y: Math.round(el.y),
@@ -1404,7 +1417,70 @@ function compressCanvasContext(scene) {
   return JSON.stringify({ elements, elementCount: elements.length });
 }
 
-async function callOpenRouter(messages, settings) {
+// ─── Canvas tool definitions (OpenAI function-calling format) ────────────────
+const CANVAS_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "canvas_read",
+      description: "Read all current elements on the Excalidraw canvas. Use this before modifying or deleting anything so you know the element IDs and positions.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "canvas_apply",
+      description: "Add new elements to the canvas.",
+      parameters: {
+        type: "object",
+        properties: {
+          elements: {
+            type: "array",
+            description: "Array of Excalidraw element objects to add",
+            items: { type: "object" },
+          },
+        },
+        required: ["elements"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "canvas_delete",
+      description: "Remove elements from the canvas by their IDs.",
+      parameters: {
+        type: "object",
+        properties: {
+          ids: {
+            type: "array",
+            description: "Array of element IDs to delete",
+            items: { type: "string" },
+          },
+        },
+        required: ["ids"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "canvas_modify",
+      description: "Modify a single existing element's properties (position, color, text, etc.).",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "The element ID to modify" },
+          changes: { type: "object", description: "Properties to update on the element" },
+        },
+        required: ["id", "changes"],
+      },
+    },
+  },
+];
+
+async function callOpenRouter(messages, settings, tools = null) {
   const apiKey = settings.aiApiKey;
   if (!apiKey) throw new Error("No API key configured");
 
@@ -1416,6 +1492,10 @@ async function callOpenRouter(messages, settings) {
   };
   if (settings.aiMaxTokens) {
     body.max_tokens = settings.aiMaxTokens;
+  }
+  if (tools && tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = "auto";
   }
 
   const resp = await fetch(OPENROUTER_URL, {
@@ -1649,128 +1729,76 @@ function handleAIStream(stream, sendResponse) {
 
 // ─── Tool Execution Loop ──────────────────────────────────────────────────────
 
-// Main loop: calls AI, detects tool_use, executes tool, re-calls AI. Max rounds.
-// Tool calls are emitted on the port as { type: "tool_call" }.
-// The FINAL (non-tool) response is streamed to the port as chunks, then sendResponse.
+// Main loop: uses REAL OpenRouter/OpenAI function-calling (tools array + tool_calls delta).
+// Each round: call AI with tools → if finish_reason=="tool_calls", execute tools → repeat.
+// The FINAL text response is streamed to the port as chunks.
 async function handleAIToolLoop(messages, settings, tabId, port, sendResponse) {
-  const MAX_TOOL_ROUNDS = 3;
+  const MAX_TOOL_ROUNDS = 5;
   let portAlive = true;
   const postToPort = (msg) => {
     if (!portAlive) return;
-    try {
-      port.postMessage(msg);
-    } catch (_) {
-      portAlive = false;
-    }
+    try { port.postMessage(msg); } catch (_) { portAlive = false; }
   };
-
-  port.onDisconnect.addListener(() => {
-    portAlive = false;
-  });
+  port.onDisconnect.addListener(() => { portAlive = false; });
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    let fullContent = "";
-    let isFinalResponse = false;
-
+    let result;
     try {
-      const stream = await callOpenRouter(messages, settings);
-      // Stream the response — collect full content and detect if it's a tool_use or final
-      const result = await consumeStreamForToolLoop(stream, postToPort);
-      fullContent = result.content;
-      isFinalResponse = !result.isToolUse;
+      // Pass tools on every request (OpenRouter requires this)
+      const stream = await callOpenRouter(messages, settings, CANVAS_TOOLS);
+      result = await consumeStreamForToolLoop(stream, postToPort);
     } catch (err) {
-      if (portAlive) {
-        postToPort({ type: "error", error: err.message });
-        sendResponse({ error: err.message });
-      }
+      postToPort({ type: "error", error: err.message });
+      sendResponse({ error: err.message });
       return;
     }
 
-    if (!fullContent.trim()) {
-      if (portAlive) {
+    const { content, toolCalls } = result;
+
+    // No tool calls → this is the final text response
+    if (!toolCalls || toolCalls.length === 0) {
+      if (!content.trim()) {
         postToPort({ type: "error", error: "The AI returned no content." });
         sendResponse({ error: "The AI returned no content." });
+        return;
       }
+      postToPort({ type: "chunk", delta: content, fullContent: content });
+      postToPort({ type: "done", fullContent: content });
+      sendResponse({ ok: true, content });
       return;
     }
 
-    if (isFinalResponse) {
-      // Final response — stream it to the port as a single chunk, then done
-      postToPort({ type: "chunk", delta: fullContent, fullContent });
-      postToPort({ type: "done", fullContent });
-      sendResponse({ ok: true, content: fullContent });
-      return;
-    }
-
-    // It's a tool_use — parse and execute.
-    // Support two formats:
-    //   1. { "action": "tool_use", "tool": "canvas_read", "params": {} }  (spec format)
-    //   2. { "action": "canvas_read", "params": {} }  (shorthand some models emit)
-    let parsed;
-    try {
-      const TOOL_USE_REGEX =
-        /\{[\s\S]*"action"\s*:\s*"(tool_use|canvas_read|canvas_apply|canvas_delete|canvas_modify)"[\s\S]*\}/;
-      const jsonMatch = fullContent.match(TOOL_USE_REGEX);
-      if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-    } catch {
-      // Couldn't parse — treat as final
-      postToPort({ type: "chunk", delta: fullContent, fullContent });
-      postToPort({ type: "done", fullContent });
-      sendResponse({ ok: true, content: fullContent });
-      return;
-    }
-
-    if (!parsed) {
-      postToPort({ type: "chunk", delta: fullContent, fullContent });
-      postToPort({ type: "done", fullContent });
-      sendResponse({ ok: true, content: fullContent });
-      return;
-    }
-
-    // Normalise: handle both { action:"tool_use", tool:"canvas_read" }
-    // and shorthand { action:"canvas_read" }
-    const CANVAS_TOOLS = ["canvas_read", "canvas_apply", "canvas_delete", "canvas_modify"];
-    let toolName, toolParams;
-    if (parsed.action === "tool_use" && parsed.tool) {
-      toolName = parsed.tool;
-      toolParams = parsed.params || {};
-    } else if (CANVAS_TOOLS.includes(parsed.action)) {
-      toolName = parsed.action;
-      toolParams = parsed.params || {};
-    } else {
-      // Not a real tool call — treat as final response
-      postToPort({ type: "chunk", delta: fullContent, fullContent });
-      postToPort({ type: "done", fullContent });
-      sendResponse({ ok: true, content: fullContent });
-      return;
-    }
-    // Execute the tool using the normalised toolName/toolParams
-    let toolResult;
-    try {
-      toolResult = await executeTool(toolName, toolParams, tabId, postToPort);
-    } catch (err) {
-      toolResult = { success: false, error: err.message };
-      postToPort({ type: "tool_call", tool: toolName, result: toolResult });
-    }
-
-    // Append assistant call FIRST, then the result as a user message.
-    // Using role:"user" for the tool result because many OpenRouter models
-    // don't support role:"tool", causing them to ignore or error on the message.
+    // There are tool calls — execute each one and build the next messages
+    // 1. Append the assistant message with tool_calls (content may be null)
     messages.push({
       role: "assistant",
-      content: JSON.stringify({ action: "tool_use", tool: toolName, params: toolParams }),
+      content: content || null,
+      tool_calls: toolCalls.map((tc) => ({
+        id: tc.id,
+        type: "function",
+        function: { name: tc.name, arguments: JSON.stringify(tc.args) },
+      })),
     });
-    messages.push({
-      role: "user",
-      content: `Tool result for ${toolName}:\n${JSON.stringify(toolResult, null, 2)}`,
-    });
+
+    // 2. Execute each tool and append role:"tool" result messages
+    for (const tc of toolCalls) {
+      let toolResult;
+      try {
+        toolResult = await executeTool(tc.name, tc.args, tabId, postToPort);
+      } catch (err) {
+        toolResult = { success: false, error: err.message };
+        postToPort({ type: "tool_call", tool: tc.name, result: toolResult });
+      }
+      messages.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: JSON.stringify(toolResult),
+      });
+    }
+    // Continue loop — call AI again with the tool results appended
   }
 
-  // Exhausted rounds
-  sendResponse({
-    ok: true,
-    content: "The AI reached the maximum number of tool rounds.",
-  });
+  sendResponse({ ok: true, content: "Reached maximum tool rounds." });
 }
 
 // Consumes an SSE stream, collects full content, and detects if the response
